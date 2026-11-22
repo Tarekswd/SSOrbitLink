@@ -1,0 +1,112 @@
+//! Experiment driver.
+//!   orbitlink-sim <seeds> <out.csv> [--quick]
+//! Grid: routing {Cgr, Epidemic, FirstContact} x security {None, Bib, BcbPsk, BcbPq} x ISL {off, on}
+//! x load {low, high}, repeated for each seed. All network metrics are SIMULATED; protect/accept
+//! times are MEASURED CPU wall time of the real bp7/ml-kem operations on this machine.
+
+use orbitlink::contact::{Constellation, PlanConfig, default_ground_stations};
+use orbitlink::security::Mode;
+use orbitlink::sim::{Routing, SimConfig, run};
+use std::io::Write;
+
+fn pct(v: &[f64], p: f64) -> f64 {
+    if v.is_empty() {
+        return f64::NAN;
+    }
+    let mut s = v.to_vec();
+    s.sort_by(f64::total_cmp);
+    s[((s.len() - 1) as f64 * p).round() as usize]
+}
+
+fn mean(v: &[f64]) -> f64 {
+    if v.is_empty() {
+        f64::NAN
+    } else {
+        v.iter().sum::<f64>() / v.len() as f64
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let a: Vec<String> = std::env::args().collect();
+    if a.len() < 3 {
+        return Err("usage: orbitlink-sim <seeds> <out.csv> [--quick]".into());
+    }
+    let seeds: u64 = a[1].parse()?;
+    let quick = a.iter().any(|x| x == "--quick");
+    let horizon = if quick { 2.0 * 3600.0 } else { 12.0 * 3600.0 };
+    let mut out = std::fs::File::create(&a[2])?;
+    writeln!(
+        out,
+        "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate"
+    )?;
+    for seed in 1..=seeds {
+        for isl in [false, true] {
+            for load in [20.0, 120.0] {
+                for routing in [Routing::Cgr, Routing::Epidemic, Routing::FirstContact] {
+                    for mode in Mode::ALL {
+                        let cfg = SimConfig {
+                            plan: PlanConfig {
+                                constellation: Constellation {
+                                    planes: 6,
+                                    per_plane: 8,
+                                    altitude_km: 550.0,
+                                    inclination_deg: 53.0,
+                                    phasing: 1,
+                                },
+                                stations: default_ground_stations(),
+                                horizon_s: horizon,
+                                step_s: 10.0,
+                                min_elevation_deg: 10.0,
+                                ground_rate_bps: 256_000.0,
+                                isl_rate_bps: isl.then_some(1_000_000.0),
+                            },
+                            routing,
+                            mode,
+                            seed,
+                            bundles_per_gs_hour: load,
+                            payload_bytes: 2048,
+                            lifetime_s: 3.0 * 3600.0,
+                            sat_buffer_bytes: 512 * 1024,
+                            gs_buffer_bytes: 64 * 1024 * 1024,
+                            dt_s: 1.0,
+                            joules_per_bit: 1e-7,
+                        };
+                        let m = run(&cfg)?;
+                        let delivered_payload = (m.delivered * cfg.payload_bytes).max(1) as f64;
+                        writeln!(
+                            out,
+                            "{seed},{routing:?},{mode:?},{isl},{load},{},{},{},{:.4},{:.1},{:.1},{},{},{},{},{},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{:.4},{:.4},{:.3}",
+                            m.contacts,
+                            m.generated,
+                            m.delivered,
+                            m.delivered as f64 / m.generated.max(1) as f64,
+                            pct(&m.delays_s, 0.5),
+                            pct(&m.delays_s, 0.95),
+                            m.expired_copies,
+                            m.refused_buffer_full,
+                            m.source_drops,
+                            m.aborted_transfers,
+                            m.bytes_tx,
+                            m.bytes_tx as f64 / delivered_payload,
+                            m.mean_bundle_bytes,
+                            m.mean_plain_bundle_bytes,
+                            m.mean_bundle_bytes - m.mean_plain_bundle_bytes,
+                            mean(&m.protect_us),
+                            mean(&m.accept_us),
+                            m.crypto_failures,
+                            m.route_computations,
+                            m.sat_buffer_util_mean,
+                            m.sat_buffer_util_max,
+                            m.energy_j_estimate
+                        )?;
+                        eprintln!(
+                            "seed={seed} isl={isl} load={load} {routing:?} {mode:?}: delivered {}/{}",
+                            m.delivered, m.generated
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}

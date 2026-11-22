@@ -1,0 +1,18 @@
+[package]
+name = "orbitlink"
+version = "0.1.0"
+edition = "2024"
+description = "Research simulator: delay-tolerant satellite networking with BPv7/BPSec and experimental ML-KEM key transport. Simulation only."
+license = "Apache-2.0 OR MIT"
+publish = false
+
+[dependencies]
+bp7 = { version = "0.12.2", features = ["bpsec"] }
+getrandom = "0.4.3"
+hkdf = "0.13.0"
+ml-kem = { version = "0.3.4", features = ["getrandom", "zeroize"] }
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+
+[profile.release]
+debug = 1
