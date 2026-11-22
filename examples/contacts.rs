@@ -1,6 +1,6 @@
 //! Contact-plan inspection: per-ground-station pass count and total contact time.
 //!   cargo run --release --example contacts [hours=12]
-use orbitlink::contact::{Constellation, PlanConfig, default_ground_stations, generate};
+use orbitlink::contact::{PlanConfig, default_ground_stations, default_shells, generate};
 
 fn main() {
     let hours: f64 = std::env::args()
@@ -9,13 +9,7 @@ fn main() {
         .unwrap_or(12.0);
     let stations = default_ground_stations();
     let plan = generate(&PlanConfig {
-        constellation: Constellation {
-            planes: 6,
-            per_plane: 8,
-            altitude_km: 550.0,
-            inclination_deg: 53.0,
-            phasing: 1,
-        },
+        shells: default_shells(),
         stations: stations.clone(),
         horizon_s: hours * 3600.0,
         step_s: 10.0,

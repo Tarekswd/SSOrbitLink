@@ -76,7 +76,8 @@ pub struct Contact {
 
 #[derive(Clone, Debug)]
 pub struct PlanConfig {
-    pub constellation: Constellation,
+    /// One or more Walker-delta shells; satellites are numbered shell by shell.
+    pub shells: Vec<Constellation>,
     pub stations: Vec<GroundStation>,
     pub horizon_s: f64,
     pub step_s: f64,
@@ -85,7 +86,7 @@ pub struct PlanConfig {
     pub isl_rate_bps: Option<f64>,
 }
 
-/// Node numbering: ground stations 0..G, then satellites G..G+P*S.
+/// Node numbering: ground stations 0..G, then the satellites of each shell in order.
 pub struct Plan {
     pub nodes: usize,
     pub ground: usize,
@@ -128,10 +129,37 @@ pub fn elevation_deg(gs: [f64; 3], sat: [f64; 3]) -> f64 {
     sin_el.clamp(-1.0, 1.0).asin().to_degrees()
 }
 
+/// Default constellation: a 53-degree shell (6 x 8 at 550 km) plus a near-polar shell (3 x 8 at 560 km,
+/// 97.6 degrees: sun-synchronous at that altitude, 97.63 computed from the J2 precession condition) so that high-latitude stations
+/// such as Svalbard (78.2 N), which a 53-degree shell never reaches, get contacts.
+pub fn default_shells() -> Vec<Constellation> {
+    vec![
+        Constellation {
+            planes: 6,
+            per_plane: 8,
+            altitude_km: 550.0,
+            inclination_deg: 53.0,
+            phasing: 1,
+        },
+        Constellation {
+            planes: 3,
+            per_plane: 8,
+            altitude_km: 560.0,
+            inclination_deg: 97.6,
+            phasing: 1,
+        },
+    ]
+}
+
 pub fn generate(cfg: &PlanConfig) -> Plan {
-    let c = &cfg.constellation;
     let g = cfg.stations.len();
-    let sats = c.planes * c.per_plane;
+    // (shell, index within shell) for every satellite, in node order
+    let sat_list: Vec<(&Constellation, usize)> = cfg
+        .shells
+        .iter()
+        .flat_map(|c| (0..c.planes * c.per_plane).map(move |i| (c, i)))
+        .collect();
+    let sats = sat_list.len();
     let mut contacts = Vec::new();
     let mut open: Vec<Option<f64>> = vec![None; g * sats];
     let steps = (cfg.horizon_s / cfg.step_s).ceil() as usize;
@@ -140,7 +168,9 @@ pub fn generate(cfg: &PlanConfig) -> Plan {
         for (gi, st) in cfg.stations.iter().enumerate() {
             let gp = gs_eci(st, t);
             for si in 0..sats {
-                let up = k < steps && elevation_deg(gp, sat_eci(c, si, t)) >= cfg.min_elevation_deg;
+                let up = k < steps
+                    && elevation_deg(gp, sat_eci(sat_list[si].0, sat_list[si].1, t))
+                        >= cfg.min_elevation_deg;
                 let slot = &mut open[gi * sats + si];
                 match (up, *slot) {
                     (true, None) => *slot = Some(t),
@@ -162,10 +192,11 @@ pub fn generate(cfg: &PlanConfig) -> Plan {
         }
     }
     if let Some(rate) = cfg.isl_rate_bps {
-        for p in 0..c.planes {
-            for s in 0..c.per_plane {
-                let a = g + p * c.per_plane + s;
-                let b = g + p * c.per_plane + (s + 1) % c.per_plane;
+        let mut base = g;
+        for c in &cfg.shells {
+            for (p, s) in (0..c.planes).flat_map(|p| (0..c.per_plane).map(move |s| (p, s))) {
+                let a = base + p * c.per_plane + s;
+                let b = base + p * c.per_plane + (s + 1) % c.per_plane;
                 for (x, y) in [(a, b), (b, a)] {
                     contacts.push(Contact {
                         from: x,
@@ -176,6 +207,7 @@ pub fn generate(cfg: &PlanConfig) -> Plan {
                     });
                 }
             }
+            base += c.planes * c.per_plane;
         }
     }
     contacts.sort_by(|x, y| x.start.total_cmp(&y.start));

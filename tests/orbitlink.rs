@@ -5,13 +5,7 @@ use orbitlink::sim::{Routing, SimConfig, build_bundle, cgr_next, run};
 
 fn plan_cfg(hours: f64, isl: bool) -> PlanConfig {
     PlanConfig {
-        constellation: Constellation {
-            planes: 6,
-            per_plane: 8,
-            altitude_km: 550.0,
-            inclination_deg: 53.0,
-            phasing: 1,
-        },
+        shells: default_shells(),
         stations: default_ground_stations(),
         horizon_s: hours * 3600.0,
         step_s: 10.0,
@@ -61,7 +55,7 @@ fn contact_plan_is_consistent() {
         );
     }
     let with_isl = generate(&plan_cfg(6.0, true));
-    assert_eq!(with_isl.contacts.len(), p.contacts.len() + 2 * 48);
+    assert_eq!(with_isl.contacts.len(), p.contacts.len() + 2 * 72);
 }
 
 fn bundle(mode: Mode, keys: &Keys) -> Bundle {
@@ -256,4 +250,16 @@ fn wrapped_key_bcb_is_refused_before_unwrap() {
         security::accept(&mut b, Mode::BcbPsk, &keys, 1),
         Err(SecError::Malformed)
     );
+}
+
+#[test]
+fn every_station_has_contacts_with_polar_shell() {
+    // Regression: with only the 53-degree shell, Svalbard (78.2 N) had zero passes.
+    let p = generate(&plan_cfg(12.0, false));
+    for g in 0..p.ground {
+        assert!(
+            p.contacts.iter().any(|c| c.from == g),
+            "station {g} has no contacts"
+        );
+    }
 }

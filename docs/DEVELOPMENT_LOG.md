@@ -39,3 +39,13 @@ Polar shell, node failures, ML-DSA sender authentication, amortised KEM, ION com
 - Rerun: bundles are 44 bytes smaller in both BCB modes; delivery conclusions unchanged. The old results directory
   (20261122T103220Z, key-wrap format) was replaced. The laptop slept and throttled during the rerun, so CPU-time
   columns are very noisy; network metrics are deterministic and unaffected.
+
+## 2026-11-22 (later) - polar shell, references
+- Added `PlanConfig::shells` (several Walker shells) and `default_shells()`: the 53-degree shell plus a near-polar
+  shell (3 x 8 at 560 km, 97.6 degrees, sun-synchronous by J2 calculation). Svalbard goes from 0 to 136 passes in
+  12 h. New regression test (16 total).
+- Rerun `results/20261122T153249Z/` (144 runs, zero crypto failures). CGR delivery rises from 0.31-0.40 to 0.67-0.78.
+  Conclusions about PQ overhead hold (epidemic/high load: -18 to -25 % vs PSK). The previous results directory
+  (53-degree shell only) was replaced.
+- References verified (RFC 9171 private block range, RFC 9173 ids and optional wrapped key, SP 800-38D 2^32 bound).
+  Found draft-ietf-dtn-bpsec-cose-19: possible overlap with the PQ key transport; must be read before any novelty claim.

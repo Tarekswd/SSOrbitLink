@@ -28,14 +28,15 @@ see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## Build, test, reproduce (Linux / WSL2)
 ```bash
-cargo test --release                                   # 15 tests
+cargo test --release                                   # 16 tests
 cargo run --release --bin orbitlink-sim -- 3 out.csv   # 3 seeds x 48 configurations (12 h simulated each)
 bash experiments/run.sh 3                              # same, with environment capture and summary
 ```
 
 ## Scenario defaults
 6 ground stations: Svalbard, Beirut, Nairobi, Singapore, Santiago, Fairbanks (rounded coordinates).
-48 satellites in 6 planes at 550 km and 53 degrees inclination, 10 degree elevation mask.
+72 satellites: a 53-degree shell (6 planes x 8, 550 km) plus a near-polar shell (3 x 8, 560 km, 97.6 degrees) so that
+Svalbard is reachable; 10 degree elevation mask. Inspect coverage with `cargo run --release --example contacts`.
 Ground links 256 kbit/s; optional intra-plane ISLs at 1 Mbit/s. 2 KiB payloads, 3 h lifetime.
 Satellite buffers 512 KiB. Load of 20 or 120 bundles per station per hour. The energy figure assumes
 1e-7 J/bit: **an illustrative assumption, not a measured or sourced value.**

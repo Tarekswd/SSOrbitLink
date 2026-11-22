@@ -20,17 +20,27 @@
 
 ## Novelty status (honest)
 - BPSec and its default contexts are **standard**. Their use here contributes nothing new.
-- KEM-based (HPKE-style) key transport is **established** in other protocols. Applying ML-KEM to BPSec key
-  transport may already be proposed; **literature check needed** (search IETF DTN WG drafts for COSE/HPKE or
-  PQ security contexts).
+- KEM-based (HPKE-style) key transport is **established** in other protocols. The IETF DTN WG's BPSec COSE context
+  draft (draft-ietf-dtn-bpsec-cose-19) exists; whether it already enables ML-KEM key transport must be checked
+  before any novelty claim.
 - **Candidate contribution (hypothesis):** quantify end-to-end delivery effects, not only per-bundle bytes, of
   carrying 1088-byte ML-KEM ciphertexts per bundle on capacity-limited, buffer-limited LEO contact plans, and
   compare that with amortised alternatives (per-session KEM keys cached at the destination).
 
-## References verified during development
-- RFC 9171, RFC 9172, RFC 9173: block types, security block numbers (11, 12) and context ids (1, 2) as
-  implemented in `bp7` (checked in source). Text of the RFCs not re-read; section numbers in comments come from
-  the `bp7` source.
+## References (verified 2026-11-22 against primary sources)
+- RFC 9171, *Bundle Protocol Version 7* (Burleigh, Fall, Birrane): block type codes 192-255 are "Reserved for
+  Private and/or Experimental Use". Our ML-KEM block uses type 200.
+- RFC 9173, *Default Security Contexts for BPSec* (Birrane, White, Heiner): context ids BIB-HMAC-SHA2 = 1,
+  BCB-AES-GCM = 2. The wrapped-key parameter is optional: "If this parameter is not present, then security
+  verifiers and acceptors MUST determine the proper key as a function of their local BPSec policy and
+  configuration". That is what OrbitLink does after removing key wrap.
+- NIST SP 800-38D (GCM): with random IVs, "the total number of invocations of the authenticated encryption function
+  shall not exceed 2^32 ... with the given key". This is the BcbPsk rotation bound.
+- draft-ietf-dtn-bpsec-cose-19 (Sipos; active dtn WG draft, updated 2026-11-19): a COSE security context for BPSec.
+  **Novelty impact:** a standard path for KEM/HPKE-style key transport in BPSec may already be under way. Whether
+  it covers ML-KEM is NOT checked yet; read it before claiming anything about the PQ key transport.
+- Sun-synchronous inclination at 550-560 km: 97.59-97.63 degrees, computed from the J2 nodal-precession condition
+  (J2 = 1.08263e-3, R = 6378.137 km). This justifies the 97.6-degree polar shell.
 
 ## Input from PHOENIX-PQ (github.com/Tarekswd/PHOENIX-PQ, reviewed 2026-11-22)
 - Adopted as next steps: its constant-time methodology. That means ctgrind (Valgrind memcheck with secret

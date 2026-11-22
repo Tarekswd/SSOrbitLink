@@ -4,7 +4,7 @@
 //! x load {low, high}, repeated for each seed. All network metrics are SIMULATED; protect/accept
 //! times are MEASURED CPU wall time of the real bp7/ml-kem operations on this machine.
 
-use orbitlink::contact::{Constellation, PlanConfig, default_ground_stations};
+use orbitlink::contact::{PlanConfig, default_ground_stations, default_shells};
 use orbitlink::security::Mode;
 use orbitlink::sim::{Routing, SimConfig, run};
 use std::io::Write;
@@ -46,13 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for mode in Mode::ALL {
                         let cfg = SimConfig {
                             plan: PlanConfig {
-                                constellation: Constellation {
-                                    planes: 6,
-                                    per_plane: 8,
-                                    altitude_km: 550.0,
-                                    inclination_deg: 53.0,
-                                    phasing: 1,
-                                },
+                                shells: default_shells(),
                                 stations: default_ground_stations(),
                                 horizon_s: horizon,
                                 step_s: 10.0,
