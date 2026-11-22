@@ -11,12 +11,15 @@
 
 use crate::contact::{Contact, Plan, PlanConfig, generate};
 use crate::rng::SplitMix64;
-use crate::security::{self, Keys, Mode};
+use crate::security::{self, Keys, Mode, ReceiverSessions, SenderSessions, SessionAccept};
 use bp7::{
     Bundle, EndpointID, canonical, crc, flags::BlockControlFlags, primary::PrimaryBlockBuilder,
 };
 use std::collections::{BinaryHeap, HashSet};
 use std::time::Instant;
+
+/// Delivered-but-undecryptable bundles per (destination, session kid): [(bundle id, expiry)].
+type Pending = std::collections::HashMap<(usize, Vec<u8>), Vec<(usize, f64)>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Routing {
@@ -40,6 +43,10 @@ pub struct SimConfig {
     pub dt_s: f64,
     /// ILLUSTRATIVE energy assumption (J per transmitted bit); not a measured or sourced value.
     pub joules_per_bit: f64,
+    /// `Mode::BcbPqSession` only: session epoch length and number of bundles per session that carry
+    /// the ML-KEM ciphertext.
+    pub pq_session_epoch_s: f64,
+    pub pq_session_redundancy: u32,
 }
 
 impl SimConfig {
@@ -74,6 +81,12 @@ pub struct Metrics {
     pub protect_us: Vec<f64>,
     pub accept_us: Vec<f64>,
     pub crypto_failures: usize,
+    /// Delivered bundles whose payload was decrypted before the bundle lifetime ended.
+    pub decrypted: usize,
+    /// Creation-to-plaintext delays (s) for decrypted bundles (>= delivery delay in session mode).
+    pub plaintext_delays_s: Vec<f64>,
+    /// Bundles generated carrying an ML-KEM ciphertext.
+    pub kem_carrying: usize,
     pub route_computations: usize,
     pub sat_buffer_util_mean: f64,
     pub sat_buffer_util_max: f64,
@@ -197,6 +210,13 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
     cfg.validate()?;
     let plan = generate(&cfg.plan);
     let keys = Keys::generate(plan.nodes);
+    let mut tx_sessions = SenderSessions::new(
+        cfg.pq_session_epoch_s.max(1.0),
+        cfg.pq_session_redundancy.max(1),
+    );
+    let mut rx_sessions = ReceiverSessions::default();
+    // delivered-but-undecryptable bundles waiting for their session key: (dst, kid) -> [(id, expires)]
+    let mut pending: Pending = Default::default();
     let mut rng = SplitMix64::new(cfg.seed);
     let mut by_from = vec![Vec::new(); plan.nodes];
     for (i, c) in plan.contacts.iter().enumerate() {
@@ -247,7 +267,14 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
             let plain_len = plain.to_cbor().len();
             let mut b = build_bundle(src, dst, payload, cfg.lifetime_s, t, seq);
             let t0 = Instant::now();
-            security::protect(&mut b, cfg.mode, &keys, src, dst).map_err(|e| e.to_string())?;
+            if cfg.mode == Mode::BcbPqSession {
+                m.kem_carrying += tx_sessions
+                    .protect(&mut b, &keys, src, dst, t)
+                    .map_err(|e| e.to_string())? as usize;
+            } else {
+                security::protect(&mut b, cfg.mode, &keys, src, dst).map_err(|e| e.to_string())?;
+                m.kem_carrying += (cfg.mode == Mode::BcbPq) as usize;
+            }
             let cbor = b.to_cbor();
             m.protect_us.push(t0.elapsed().as_secs_f64() * 1e6);
             m.mean_plain_bundle_bytes += plain_len as f64;
@@ -348,12 +375,54 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
                         let mut b =
                             Bundle::try_from(msg.cbor.as_slice()).map_err(|e| format!("{e:?}"))?;
                         let t0 = Instant::now();
-                        match security::accept(&mut b, cfg.mode, &keys, msg.dst) {
-                            Ok(()) => m.accept_us.push(t0.elapsed().as_secs_f64() * 1e6),
-                            Err(_) => m.crypto_failures += 1,
+                        let now = t + cfg.dt_s;
+                        if cfg.mode == Mode::BcbPqSession {
+                            match rx_sessions.accept(&mut b, &keys, msg.dst) {
+                                Ok(SessionAccept::Ok { learned }) => {
+                                    m.accept_us.push(t0.elapsed().as_secs_f64() * 1e6);
+                                    m.decrypted += 1;
+                                    m.plaintext_delays_s.push(now - msg.created);
+                                    // a newly learned key unlocks bundles waiting for it (if not yet expired)
+                                    if let Some(kid) = learned {
+                                        for (pid, exp) in
+                                            pending.remove(&(msg.dst, kid)).unwrap_or_default()
+                                        {
+                                            let mut pb =
+                                                Bundle::try_from(msgs[pid].cbor.as_slice())
+                                                    .map_err(|e| format!("{e:?}"))?;
+                                            if exp > now {
+                                                match rx_sessions.accept(&mut pb, &keys, msg.dst) {
+                                                    Ok(SessionAccept::Ok { .. }) => {
+                                                        m.decrypted += 1;
+                                                        m.plaintext_delays_s
+                                                            .push(now - msgs[pid].created);
+                                                    }
+                                                    _ => m.crypto_failures += 1,
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(SessionAccept::KeyUnavailable { kid }) => {
+                                    pending
+                                        .entry((msg.dst, kid))
+                                        .or_default()
+                                        .push((id, msg.expires));
+                                }
+                                Err(_) => m.crypto_failures += 1,
+                            }
+                        } else {
+                            match security::accept(&mut b, cfg.mode, &keys, msg.dst) {
+                                Ok(()) => {
+                                    m.accept_us.push(t0.elapsed().as_secs_f64() * 1e6);
+                                    m.decrypted += 1;
+                                    m.plaintext_delays_s.push(now - msg.created);
+                                }
+                                Err(_) => m.crypto_failures += 1,
+                            }
                         }
                         m.delivered += 1;
-                        m.delays_s.push(t + cfg.dt_s - msg.created);
+                        m.delays_s.push(now - msg.created);
                     } else {
                         m.duplicates += 1;
                     }

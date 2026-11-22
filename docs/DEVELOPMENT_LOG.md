@@ -55,3 +55,13 @@ Polar shell, node failures, ML-DSA sender authentication, amortised KEM, ION com
   (draft-ietf-cose-hpke-pq-pqt) for BCB key transport. **OrbitLink's PQ key transport is therefore not novel**;
   docs now describe it as a simulation stand-in. Any remaining contribution is the network-level measurement,
   which still needs its own literature check.
+
+## 2026-11-22 (later) - COSE encoding and session amortisation
+- Read draft-ietf-dtn-bpsec-cose-19, draft-ietf-cose-pqc-kem-00 and draft-ietf-cose-hpke-27 (text downloaded from
+  the IETF archive) and implemented src/cose.rs from them. Verified with the bpsec-cose Appendix A vector (external_aad
+  and AES-256-GCM ciphertext byte-exact) and NIST SP 800-185 KMAC256 samples #4/#5. KMAC from tiny-keccak 2.0.2.
+- First test attempt used plaintext "hello"; the draft's BTSD is h'6568656c6c6f' = "ehello". Fixed in the test.
+- Added `Mode::BcbPqSession`. 25 tests pass, clippy clean.
+- Grid rerun `results/20261122T164252Z/` (180 runs, zero crypto failures); the previous results (block-200 stand-in,
+  no session mode) were replaced. Findings in docs/PAPER_DRAFT.md: amortisation helps buffer-bound epidemic
+  routing and costs 3-5 % decryptability under CGR at high load.

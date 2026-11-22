@@ -1,90 +1,107 @@
-# What Does Post-Quantum Bundle Confidentiality Cost a LEO DTN? A Simulation Study with BPv7/BPSec
+# Amortising Post-Quantum Key Transport in Delay-Tolerant Satellite Networks
 
-*Working draft. Network metrics are SIMULATED, cryptographic CPU times MEASURED, energy ESTIMATED
-(`results/20261122T153249Z/`, 144 runs = 48 configurations x 3 seeds, 12 h simulated each). Sections marked
-**[TODO]** are not done. The PQ key transport mechanism itself is NOT novel: it corresponds to the IETF path of the
-BPSec COSE context (draft-ietf-dtn-bpsec-cose-19) with an ML-KEM COSE recipient (draft-ietf-cose-pqc-kem). The
-study's possible contribution is the network-level measurement; see docs/RESEARCH.md.*
+*Working draft. Network metrics are SIMULATED and cryptographic CPU times are MEASURED
+(`results/20261122T164252Z/`: 180 runs = 60 configurations x 3 seeds, 12 h simulated each). Sections marked
+**[TODO]** are not done.*
 
 ## Abstract
 
-We simulate a 72-satellite LEO constellation serving 6 ground stations over intermittent 256 kbit/s ground links,
-optionally with intra-plane ISLs. The constellation has a 53-degree shell (48 satellites, 550 km) and a near-polar
-shell (24 satellites, 560 km, 97.6 degrees). All traffic is real BPv7 bundles, protected with standard BPSec
-(RFC 9173 BIB-HMAC-SHA2, BCB-AES-GCM) or a per-bundle ML-KEM-768 key transport. That transport is a simulation
-stand-in for the standards-track BPSec COSE context with an ML-KEM recipient, not a new mechanism. The PQ mode adds
-1,145 bytes per bundle, against 48 bytes for PSK-based BCB, and about 110-150 us of CPU per bundle at each end on
-our machine. With CGR-style routing this overhead changes **neither** delivery ratio nor delay in any tested
-configuration (delivery 0.67-0.78). With epidemic routing under high load, where buffers are constrained, PQ
-bundles lower delivery from 0.382 to 0.287 (no ISLs) and from 0.403 to 0.331 (ISLs).
+Bundle Protocol Security is moving to COSE, and ML-KEM is the expected post-quantum key transport there
+(draft-ietf-dtn-bpsec-cose-19 with draft-ietf-cose-pqc-kem-00). We implement that encoding: a BCB with security
+context 3 carrying a COSE_Encrypt with one ML-KEM-768 recipient. Our AAD construction and AES-256-GCM output
+reproduce the draft's Appendix A vector byte for byte, and KMAC256 matches the NIST SP 800-185 samples. Per bundle,
+ML-KEM key transport adds 1,184 bytes. With no end-to-end acknowledgements, a sender cannot know when the destination
+has learned a key, so amortisation is risky. We measure a simple amortisation: one encapsulation per
+(source, destination, hour), with the KEM ciphertext carried only by the first r bundles of the session and a COSE
+"direct" recipient in the others. In a simulated 72-satellite LEO DTN it cuts security bytes per bundle from
+1,184 to 132-807, and the number of KEM-carrying bundles by 34-96 %. It changes the outcome in opposite directions
+depending on routing. Under buffer-bound epidemic routing it **raises** decrypted delivery (0.283 to 0.323,
++14 %, at high load without ISLs). Under contact-graph routing it **lowers** it by up to 0.034 absolute. Under
+first-contact (random-walk) routing it lowers it by up to 0.114 absolute: with r = 1 at high load, 41 % of
+delivered bundles are never decrypted. The less predictable the routing, the less safe amortisation becomes,
+because delivered bundles miss every key-carrying bundle of their session before they expire.
 
-## 1. Setup
+## 1. Contribution and novelty status
 
-See README. Bundles carry a 2 KiB payload with a 3 h lifetime, between uniformly random station pairs, at 20 or
-120 bundles per station per hour. Satellite buffers are 512 KiB.
+- **Not novel:** ML-KEM key transport in BPSec, which is the IETF path (bpsec-cose + cose-pqc-kem). We implement and
+  measure it.
+- **Candidate contribution:** the amortisation/decryptability trade-off of post-quantum key transport in
+  acknowledgement-free DTNs, quantified per routing regime. A limited literature check found no prior
+  measurement of this: the IETF drafts, the DTKA draft, the DTN key-management survey (Menesidou et al. 2017) and
+  Rüsch et al. (CHANTS 2017, per-bundle puncturable encryption, no amortisation, not PQ). **[TODO]** A systematic
+  literature search before submission.
 
-**Coverage.** A first version used only the 53-degree shell. Svalbard (78.2 N) then had 0 passes, so 1/3 of all
-bundles were undeliverable by construction. The near-polar shell fixes this: in 12 h, Svalbard has 136 passes and
-every station has at least 104 (`cargo run --release --example contacts`). The regression test
-`every_station_has_contacts_with_polar_shell` checks that every station has contacts. The 97.6-degree inclination
-is sun-synchronous at 560 km (97.63 degrees from the J2 precession condition). No inter-shell links are modelled:
-bundles change shells only through ground stations.
+## 2. Setup
 
-## 2. Results
+Constellation, stations and traffic are as in README. Coverage: a 53-degree shell plus a 97.6-degree shell, so every
+station has at least 104 passes in 12 h. Variants: None, BcbPsk (RFC 9173, PSK used directly), BcbPq (COSE,
+ML-KEM per bundle), and BcbPqSession with r = 1 or 3 (session = one hour). A delivered session bundle counts as
+decrypted only if a key-carrying bundle of its session reaches the destination before the bundle's 3 h lifetime
+ends. Placeholder codepoints: ML-KEM-768 "TBD2" and `ek` "TBD11 (assumed -4)"; see src/cose.rs.
 
-### Per-bundle cost (measured; means over the 3-seed runs)
+## 3. Results (mean +/- 95 % CI over 3 seeds; full table in summary.md)
 
-| Mode | Added bytes per bundle | Protect CPU (us) | Accept CPU (us) |
-|---|---|---|---|
-| None | 0 | ~2 | 0 |
-| Bib (BIB-HMAC-SHA2) | 72 | ~10-22 | ~8-13 |
-| BcbPsk (BCB-AES-GCM, PSK used directly) | 48 | ~6-22 | ~5-12 |
-| BcbPq (experimental, ML-KEM-768, derived key used directly) | 1,145 | ~110-150 | ~130-146 |
+### Bytes
 
-Wall-clock times on a laptop under WSL2: orders of magnitude only, and **not** side-channel evidence (see
-docs/RESEARCH.md, PHOENIX-PQ note). An earlier version wrapped a random content key with AES-KW (+44 bytes). That
-path was removed because the aes-kw unwrap check is not constant-time (docs/THREAT_MODEL.md).
+| Variant | Added bytes per bundle (high load / low load) | KEM-carrying bundles (high load) |
+|---|---|---|
+| BcbPsk | 48 / 48 | 0 |
+| BcbPq (COSE, per bundle) | 1,184 / 1,184 | 8,624 of 8,624 |
+| BcbPqSession r=1 | 132 / 349 | 360 |
+| BcbPqSession r=3 | 224 / 807 | 1,080 |
 
-### Delivery (simulated, mean of 3 seeds; full table with CIs in summary.md)
+The COSE encoding costs 39 bytes per bundle more than our earlier ad-hoc stand-in (1,145 bytes).
 
-| ISL | load/GS/h | CGR (all modes) | Epidemic None / Psk / Pq | FirstContact None / Pq |
-|---|---|---|---|---|
-| off | 20 | 0.672 | 0.672 / 0.672 / 0.650 | 0.223 / 0.223 |
-| off | 120 | 0.678 | 0.388 / 0.382 / **0.287** | 0.222 / 0.226 |
-| on | 20 | 0.772 | 0.772 / 0.771 / 0.727 | 0.314 / 0.314 |
-| on | 120 | 0.778 | 0.408 / 0.403 / **0.331** | 0.327 / 0.332 |
+### Decrypted delivery ratio (delivered and decrypted within lifetime / generated)
 
-- **CGR is insensitive to the security mode.** Delivery and median delay are identical across modes in every
-  configuration: about 4,030 s without ISLs and 508-546 s with ISLs. CGR is bounded by contact opportunities within
-  the 3 h lifetime, not by capacity: no buffer refusals and mean satellite buffer use of at most 0.032.
-- **Epidemic routing is buffer-bound at high load** (mean satellite buffer use 0.49-0.88). There, PQ bundles cut
-  delivery by 18-25 % relative to PSK (0.331/0.403 and 0.287/0.382). Even at low load with ISLs, PQ raises the
-  median delay from 711 s to 1,836 s.
-- **FirstContact with always-on ISLs shows a baseline pathology.** Bundles circulate around the intra-plane ring
-  until they expire, so transmitted bytes per delivered payload byte reach about 43,000-76,000. This reflects the
-  naive baseline, not the security modes.
+| ISL | load | routing | BcbPq | Session r=1 | Session r=3 | BcbPsk |
+|---|---|---|---|---|---|---|
+| off | 120 | CGR | 0.678 +/- 0.007 | 0.644 +/- 0.014 | 0.651 +/- 0.012 | 0.678 |
+| off | 20 | CGR | 0.672 +/- 0.008 | 0.653 +/- 0.016 | 0.667 +/- 0.002 | 0.672 |
+| on | 120 | CGR | 0.778 +/- 0.012 | 0.751 +/- 0.014 | 0.755 +/- 0.016 | 0.778 |
+| on | 20 | CGR | 0.772 +/- 0.011 | 0.756 +/- 0.011 | 0.771 +/- 0.007 | 0.772 |
+| off | 120 | Epidemic | 0.283 +/- 0.011 | 0.322 +/- 0.010 | 0.323 +/- 0.006 | 0.382 |
+| off | 20 | Epidemic | 0.647 +/- 0.013 | 0.649 +/- 0.007 | 0.657 +/- 0.012 | 0.672 |
+| on | 120 | Epidemic | 0.331 +/- 0.010 | 0.323 +/- 0.018 | 0.340 +/- 0.001 | 0.403 |
+| on | 20 | Epidemic | 0.726 +/- 0.013 | 0.748 +/- 0.017 | 0.745 +/- 0.013 | 0.771 |
 
-## 3. Discussion
+### Findings
 
-For contact-plan-aware routing, per-bundle PQ key transport looks affordable in bandwidth at these loads. Where
-copies multiply, as in flooding, the 1.1 KB overhead multiplies too. That argues for amortising KEM ciphertexts in
-flooding-based or buffer-constrained designs, for example with per-session keys cached at the destination.
-**[TODO]** Implement and measure amortisation.
+1. **CGR: amortisation costs decryptability, not delivery.** Delivery is identical, but 3-5 % of delivered bundles
+   stay undecryptable at high load. r = 3 recovers almost everything at low load (0.771 vs 0.772 with ISLs). At high
+   load it barely helps (0.651 vs 0.644): with about 24 bundles per session per hour, the first r bundles are a
+   small, time-clustered sample, and when they fail the later bundles cannot recover.
+2. **Epidemic: amortisation helps when buffers bind.** Smaller bundles mean fewer refusals. Decrypted delivery rises
+   by 0.039-0.040 at high load without ISLs, and the median time to plaintext falls from 8,024 s to 6,566 s. With ISLs
+   at high load, r = 1 is not better than per-bundle (0.323 vs 0.331) but r = 3 is (0.340).
+3. **Unpredictable routing punishes amortisation most.** Under FirstContact, delivery is unchanged, but decrypted
+   delivery at high load drops from 0.226 to 0.130 (r = 1) or 0.176 (r = 3) without ISLs, and from 0.332 to 0.218 or
+   0.266 with ISLs. Key-carrying bundles and later bundles take unrelated random paths.
+4. **The gap to PSK remains.** Even the best PQ variant stays below BcbPsk under epidemic routing at high load
+   (0.323-0.340 vs 0.382-0.403).
 
-## 4. Limitations
+## 4. Discussion: towards a better policy **[TODO-EXPERIMENT]**
 
-Simplified orbits (no SGP4/J2 propagation of the orbits themselves); no inter-shell links; static rates; no link
-outages beyond geometry; CGR without volume accounting; 3 seeds; no node failures; no sender authentication in
-BcbPq; single network-wide PSK.
+Finding 1 suggests carrying the ciphertext *where it will be needed* rather than only first: periodically
+(every k-th bundle), or whenever a session's bundles take a new first hop or contact. A hypothesis to test:
+contact-aware refresh closes the CGR decryptability gap at a fraction of per-bundle bytes. Destination-generated
+key acknowledgements, sent back when contacts allow, are another option to evaluate.
 
-## 5. Future work
+## 5. Security trade-off
 
-Inter-shell ISLs; node failures and disappearance; ML-DSA BIB for sender authentication; amortised KEM keys;
-comparison with ION CGR on the same contact plan; re-implement BcbPq as the BPSec COSE context with an ML-KEM
-recipient (draft-ietf-dtn-bpsec-cose, draft-ietf-cose-pqc-kem) to measure the real encoding overhead; literature
-search for prior DTN post-quantum performance studies.
+A session key protects up to one hour of bundles between a pair: compromising it exposes that epoch, whereas
+per-bundle keys bound exposure to one bundle. The receiver caches a session key only after it authenticated a
+bundle, so a forged KEM ciphertext cannot poison the cache (test `forged_kem_bundle_does_not_poison_session_cache`).
+There is still no sender authentication (ML-DSA via the COSE context is future work).
+
+## 6. Limitations
+
+Simplified orbits; no inter-shell links; static rates; CGR without volume accounting; 3 seeds; one session length
+(1 h); single network-wide PSK; placeholder COSE codepoints; the PartyU/V KDF detail differs between the two drafts.
 
 ## References (verified; see docs/RESEARCH.md)
 
-RFC 9171 (BPv7), RFC 9172 (BPSec), RFC 9173 (default security contexts), NIST SP 800-38D (GCM),
-FIPS 203 (ML-KEM), draft-ietf-dtn-bpsec-cose-19, draft-ietf-cose-pqc-kem, draft-ietf-cose-hpke-pq-pqt.
+RFC 9171, RFC 9172, RFC 9173; draft-ietf-dtn-bpsec-cose-19; draft-ietf-cose-pqc-kem-00; draft-ietf-cose-hpke-27;
+NIST SP 800-38D; NIST SP 800-185 KMAC samples; FIPS 203; S. Rüsch et al., *Forward Secure Delay-Tolerant
+Networking*, CHANTS 2017, doi:10.1145/3124087.3124094; S. A. Menesidou et al., *Cryptographic Key Management in
+Delay Tolerant Networks: A Survey*, Future Internet 2017; draft-burleigh-dtnwg-dtka.

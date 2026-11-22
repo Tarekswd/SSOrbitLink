@@ -28,12 +28,15 @@
   recipient. That is OrbitLink's construction and motivation. The COSE context also profiles ML-DSA signatures
   and certificate-based authentication of the security source, which addresses BcbPq's missing sender
   authentication.
-- **Remaining candidate contribution (hypothesis, literature not yet checked):** measuring the *network-level*
-  effect of per-bundle PQ key transport (delivery, delay, buffer pressure) under realistic LEO contact plans and
-  routing strategies. Our data shows no effect under CGR and an 18-25 % delivery loss under buffer-bound epidemic
-  routing. Before claiming this, search for DTN/BPSec post-quantum performance studies.
-- **Engineering next step:** replace the block-200 stand-in with the COSE context
-  (COSE_Encrypt + ML-KEM recipient, or PQ/T HPKE) so bundle sizes match the standards-track encoding.
+- **Candidate contribution (2026-11-22):** the amortisation/decryptability trade-off of post-quantum key transport
+  without end-to-end acknowledgements (`BcbPqSession`), measured per routing regime. Literature checked so far found no
+  prior measurement of it: the IETF drafts above, draft-burleigh-dtnwg-dtka (Delay-Tolerant Key Administration),
+  Menesidou et al., *Cryptographic Key Management in Delay Tolerant Networks: A Survey* (Future Internet 2017), and
+  Rüsch et al., *Forward Secure Delay-Tolerant Networking* (CHANTS 2017). Rüsch et al. was read in full; it uses
+  per-bundle puncturable encryption (pairing-based) with no amortisation and nothing post-quantum. This was a
+  limited search (4 queries + 1 paper); a systematic search is needed before any novelty claim.
+- **Next experiment:** contact-aware or periodic ciphertext refresh, to close the CGR decryptability gap.
+- Done: `BcbPq` now uses the COSE context encoding (src/cose.rs); the block-200 stand-in was removed.
 
 ## References (verified 2026-11-22 against primary sources)
 - RFC 9171, *Bundle Protocol Version 7* (Burleigh, Fall, Birrane): block type codes 192-255 are "Reserved for

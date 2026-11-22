@@ -6,6 +6,7 @@
 //! (security.rs, `Mode::BcbPq`). SIMULATION ONLY: no claim of compatibility with flight hardware.
 
 pub mod contact;
+pub mod cose;
 pub mod rng;
 pub mod security;
 pub mod sim;

@@ -8,24 +8,24 @@
 //!            (NIST SP 800-38D random-IV limit) and rotate the PSK before that.
 //! No mode uses the RFC 9173 wrapped-key parameter: unwrapping goes through `aes-kw` 0.2.1, whose
 //! integrity check is a non-constant-time `==` (see docs/THREAT_MODEL.md), so that path is never reached.
-//! EXPERIMENTAL ENCODING (not in any RFC; the mechanism itself is on the IETF track as the BPSec COSE
-//! context, draft-ietf-dtn-bpsec-cose, with an ML-KEM COSE recipient, draft-ietf-cose-pqc-kem):
-//!   BcbPq  - as BcbPsk, but the AES-GCM key is derived per bundle as HKDF-SHA256(ML-KEM-768 shared secret)
-//!            from an encapsulation to the DESTINATION's long-term ML-KEM key. The ML-KEM ciphertext
-//!            travels in extension block type 200 (block types 192-255 are reserved for private /
-//!            experimental use in RFC 9171). No pre-shared secret is needed between endpoints, only
-//!            the destination's public key - the point for networks with no end-to-end path.
-//!            It provides NO sender authentication: anyone can encapsulate to a public key.
+//! POST-QUANTUM (standards-track encoding, see src/cose.rs):
+//!   BcbPq        - BPSec COSE context (draft-ietf-dtn-bpsec-cose-19) COSE_Encrypt with one ML-KEM-768
+//!                  recipient (draft-ietf-cose-pqc-kem-00, Direct Key Agreement): a fresh encapsulation to
+//!                  the DESTINATION's long-term key for every bundle. No sender authentication.
+//!   BcbPqSession - EXPERIMENTAL (research question of this project): one encapsulation per
+//!                  (source, destination, epoch); the KEM ciphertext is carried only by the first
+//!                  `redundancy` bundles of the epoch, later bundles use a COSE "direct" (-6) recipient
+//!                  naming the session key by kid. Bundles that arrive before any key-carrying bundle are
+//!                  undecryptable until one arrives (see sim.rs). Session-key compromise exposes one epoch.
 
+use crate::cose::{self, Recipient};
 use bp7::bpsec::rfc9173::{bcb, bib};
 use bp7::bpsec::{BIB_HMAC_SHA2_ID, BcbSecurityContextParameter, BibSecurityContextParameter};
-use bp7::{Bundle, CanonicalData, EndpointID, canonical::new_canonical_block, crc::CRC_NO};
-use hkdf::Hkdf;
+use bp7::{Bundle, EndpointID, crc::CRC_NO};
 use ml_kem::kem::{Decapsulate, Encapsulate, Kem, KeyExport, TryKeyInit};
 use ml_kem::{MlKem768, ml_kem_768};
-use sha2::Sha256;
+use std::collections::HashMap;
 
-pub const PQ_KEM_BLOCK_TYPE: u64 = 200;
 const PAYLOAD: u64 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,10 +34,17 @@ pub enum Mode {
     Bib,
     BcbPsk,
     BcbPq,
+    BcbPqSession,
 }
 
 impl Mode {
-    pub const ALL: [Mode; 4] = [Mode::None, Mode::Bib, Mode::BcbPsk, Mode::BcbPq];
+    pub const ALL: [Mode; 5] = [
+        Mode::None,
+        Mode::Bib,
+        Mode::BcbPsk,
+        Mode::BcbPq,
+        Mode::BcbPqSession,
+    ];
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -91,14 +98,22 @@ fn source_eid(node: usize) -> EndpointID {
     EndpointID::with_ipn(node as u64 + 1, 0).expect("valid ipn")
 }
 
-/// Per-bundle AES-256-GCM key from the ML-KEM shared secret. Every bundle has a fresh encapsulation,
-/// so every bundle has a fresh key ("v1": v0 wrapped a random content key under this value).
-fn pq_key(ss: &[u8]) -> [u8; 32] {
-    let mut key = [0u8; 32];
-    Hkdf::<Sha256>::new(None, ss)
-        .expand(b"orbitlink v1 bcb key", &mut key)
-        .expect("32 bytes");
-    key
+fn kid_for(dst: usize) -> Vec<u8> {
+    format!("ipn:{}.0/mlkem768", dst + 1).into_bytes()
+}
+
+fn encapsulate(keys: &Keys, dst: usize) -> Result<(Vec<u8>, Vec<u8>), SecError> {
+    let ek = ml_kem_768::EncapsulationKey::new_from_slice(&keys.ek[dst])
+        .map_err(|_| SecError::Malformed)?;
+    let (ct, ss) = ek.encapsulate();
+    Ok((ct.to_vec(), ss.to_vec()))
+}
+
+fn cose_err(e: cose::CoseError) -> SecError {
+    match e {
+        cose::CoseError::Auth => SecError::Integrity,
+        cose::CoseError::Malformed(_) => SecError::Malformed,
+    }
 }
 
 /// Apply the security mode to a freshly built bundle created at `src` for destination `dst`.
@@ -122,32 +137,32 @@ pub fn protect(
             )
             .map_err(bp)?;
         }
-        Mode::BcbPsk | Mode::BcbPq => {
-            let key = if mode == Mode::BcbPsk {
-                keys.bcb_psk
-            } else {
-                let ek = ml_kem_768::EncapsulationKey::new_from_slice(&keys.ek[dst])
-                    .map_err(|_| SecError::Malformed)?;
-                let (ct, ss) = ek.encapsulate();
-                let n = b
-                    .canonicals
-                    .iter()
-                    .map(|c| c.block_number)
-                    .max()
-                    .unwrap_or(1)
-                    + 1;
-                b.add_canonical_block(new_canonical_block(
-                    PQ_KEM_BLOCK_TYPE,
-                    n,
-                    0,
-                    CanonicalData::Unknown(ct.to_vec()),
-                ));
-                pq_key(&ss)
-            };
-            // No wrapped key: `key` is the content-encryption key itself (RFC 9173 allows either).
+        Mode::BcbPsk => {
+            // No wrapped key: the PSK is the content-encryption key itself (RFC 9173 allows either).
             let params = BcbSecurityContextParameter::default();
-            bcb::encrypt(b, PAYLOAD, &key, &random::<12>(), eid, params).map_err(bp)?;
+            bcb::encrypt(b, PAYLOAD, &keys.bcb_psk, &random::<12>(), eid, params).map_err(bp)?;
         }
+        Mode::BcbPq => {
+            let (kem_ct, ss) = encapsulate(keys, dst)?;
+            let cek = cose::derive_cek(
+                &ss,
+                &cose::protected_alg(cose::ALG_MLKEM768_PLACEHOLDER),
+                &eid,
+            );
+            let kid = kid_for(dst);
+            cose::seal_payload(
+                b,
+                &eid,
+                &cek,
+                &random::<12>(),
+                Recipient::MlKem {
+                    kem_ct: &kem_ct,
+                    kid: &kid,
+                },
+            )
+            .map_err(cose_err)?;
+        }
+        Mode::BcbPqSession => return Err(SecError::Bpsec("use SenderSessions::protect".into())),
     }
     Ok(())
 }
@@ -174,36 +189,159 @@ pub fn accept(b: &mut Bundle, mode: Mode, keys: &Keys, dst: usize) -> Result<(),
                 Err(SecError::Integrity)
             }
         }
-        Mode::BcbPsk | Mode::BcbPq => {
+        Mode::BcbPsk => {
             // Refuse any BCB that carries a wrapped key: bp7 would unwrap it with aes-kw, whose
             // integrity check is not constant-time, on attacker-chosen input.
             let bcbs = b.decode_bcbs();
             let [bcb_block] = bcbs.as_slice() else {
                 return Err(SecError::Malformed);
             };
+            if bcb_block.security_context_id != bp7::bpsec::BCB_AES_GCM_ID {
+                return Err(SecError::Malformed);
+            }
             let params: Option<BcbSecurityContextParameter> =
                 bcb_block.parameters().map_err(|_| SecError::Malformed)?;
             if params.is_some_and(|p| p.wrapped_key.is_some()) {
                 return Err(SecError::Malformed);
             }
-            let key = if mode == Mode::BcbPsk {
-                keys.bcb_psk
-            } else {
-                let ext = b
-                    .canonicals
-                    .iter()
-                    .find(|c| c.block_type == PQ_KEM_BLOCK_TYPE)
-                    .ok_or(SecError::Malformed)?;
-                let CanonicalData::Unknown(ct) = ext.data() else {
-                    return Err(SecError::Malformed);
-                };
+            let n = block_of(b, bp7::bpsec::CONFIDENTIALITY_BLOCK).ok_or(SecError::Malformed)?;
+            bcb::decrypt(b, n, &keys.bcb_psk, CRC_NO).map_err(|_| SecError::Integrity)
+        }
+        Mode::BcbPq => {
+            let o = cose::open(b).map_err(cose_err)?;
+            let ct = o.kem_ct.as_ref().ok_or(SecError::Malformed)?;
+            let ss = keys.dk[dst]
+                .decapsulate_slice(ct)
+                .map_err(|_| SecError::Malformed)?;
+            let cek = cose::derive_cek(&ss, &o.recipient_protected, &o.source);
+            cose::unseal_payload(b, &o, &cek).map_err(cose_err)
+        }
+        Mode::BcbPqSession => Err(SecError::Bpsec("use ReceiverSessions::accept".into())),
+    }
+}
+
+/// Sender-side state for `Mode::BcbPqSession`.
+pub struct SenderSessions {
+    pub epoch_s: f64,
+    pub redundancy: u32,
+    sessions: HashMap<(usize, usize, u64), Session>,
+}
+
+struct Session {
+    kid: Vec<u8>,
+    kem_ct: Vec<u8>,
+    cek: [u8; 32],
+    carried: u32,
+}
+
+impl SenderSessions {
+    pub fn new(epoch_s: f64, redundancy: u32) -> Self {
+        assert!(
+            epoch_s > 0.0 && redundancy >= 1,
+            "epoch > 0, redundancy >= 1"
+        );
+        SenderSessions {
+            epoch_s,
+            redundancy,
+            sessions: HashMap::new(),
+        }
+    }
+
+    /// Protect a bundle created at time `t`. Returns true if it carries the KEM ciphertext.
+    pub fn protect(
+        &mut self,
+        b: &mut Bundle,
+        keys: &Keys,
+        src: usize,
+        dst: usize,
+        t: f64,
+    ) -> Result<bool, SecError> {
+        let eid = source_eid(src);
+        let epoch = (t / self.epoch_s) as u64;
+        let s = match self.sessions.entry((src, dst, epoch)) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(v) => {
+                let (kem_ct, ss) = encapsulate(keys, dst)?;
+                let cek = cose::derive_cek(
+                    &ss,
+                    &cose::protected_alg(cose::ALG_MLKEM768_PLACEHOLDER),
+                    &eid,
+                );
+                let mut kid = random::<12>().to_vec(); // per-session identifier, not secret
+                kid.extend((dst as u32).to_be_bytes());
+                v.insert(Session {
+                    kid,
+                    kem_ct,
+                    cek,
+                    carried: 0,
+                })
+            }
+        };
+        let with_ct = s.carried < self.redundancy;
+        let r = if with_ct {
+            s.carried += 1;
+            Recipient::MlKem {
+                kem_ct: &s.kem_ct,
+                kid: &s.kid,
+            }
+        } else {
+            Recipient::Direct { kid: &s.kid }
+        };
+        cose::seal_payload(b, &eid, &s.cek, &random::<12>(), r).map_err(cose_err)?;
+        Ok(with_ct)
+    }
+}
+
+/// Destination-side key cache for `Mode::BcbPqSession`.
+#[derive(Default)]
+pub struct ReceiverSessions {
+    keys: HashMap<(usize, Vec<u8>), [u8; 32]>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SessionAccept {
+    /// Decrypted. `learned` = this bundle carried the KEM ciphertext and taught a new session key.
+    Ok { learned: Option<Vec<u8>> },
+    /// Valid structure, but the session key named by `kid` is not known yet.
+    KeyUnavailable { kid: Vec<u8> },
+}
+
+impl ReceiverSessions {
+    pub fn accept(
+        &mut self,
+        b: &mut Bundle,
+        keys: &Keys,
+        dst: usize,
+    ) -> Result<SessionAccept, SecError> {
+        let o = cose::open(b).map_err(cose_err)?;
+        let slot = (dst, o.kid.clone());
+        let (cek, learned) = match (&o.kem_ct, self.keys.get(&slot)) {
+            (Some(ct), known) => {
                 let ss = keys.dk[dst]
                     .decapsulate_slice(ct)
                     .map_err(|_| SecError::Malformed)?;
-                pq_key(&ss)
-            };
-            let n = block_of(b, bp7::bpsec::CONFIDENTIALITY_BLOCK).ok_or(SecError::Malformed)?;
-            bcb::decrypt(b, n, &key, CRC_NO).map_err(|_| SecError::Integrity)
+                let cek = cose::derive_cek(
+                    &ss,
+                    &cose::protected_alg(cose::ALG_MLKEM768_PLACEHOLDER),
+                    &o.source,
+                );
+                (
+                    cek,
+                    if known.is_none() {
+                        Some(o.kid.clone())
+                    } else {
+                        None
+                    },
+                )
+            }
+            (None, Some(k)) => (*k, None),
+            (None, None) => return Ok(SessionAccept::KeyUnavailable { kid: o.kid }),
+        };
+        cose::unseal_payload(b, &o, &cek).map_err(cose_err)?;
+        // Only cache a key after it authenticated a bundle: a forged KEM ciphertext cannot poison the cache.
+        if let Some(k) = &learned {
+            self.keys.insert((dst, k.clone()), cek);
         }
+        Ok(SessionAccept::Ok { learned })
     }
 }

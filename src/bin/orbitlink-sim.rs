@@ -1,6 +1,7 @@
 //! Experiment driver.
 //!   orbitlink-sim <seeds> <out.csv> [--quick]
-//! Grid: routing {Cgr, Epidemic, FirstContact} x security {None, Bib, BcbPsk, BcbPq} x ISL {off, on}
+//! Grid: routing {Cgr, Epidemic, FirstContact} x security {None, BcbPsk, BcbPq, BcbPqSession r=1, r=3}
+//! x ISL {off, on}
 //! x load {low, high}, repeated for each seed. All network metrics are SIMULATED; protect/accept
 //! times are MEASURED CPU wall time of the real bp7/ml-kem operations on this machine.
 
@@ -37,13 +38,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut out = std::fs::File::create(&a[2])?;
     writeln!(
         out,
-        "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate"
+        "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate,session_redundancy,decrypted_ratio,plaintext_delay_median_s,plaintext_delay_p95_s,kem_carrying"
     )?;
     for seed in 1..=seeds {
         for isl in [false, true] {
             for load in [20.0, 120.0] {
                 for routing in [Routing::Cgr, Routing::Epidemic, Routing::FirstContact] {
-                    for mode in Mode::ALL {
+                    for (mode, redundancy) in [
+                        (Mode::None, 0),
+                        (Mode::BcbPsk, 0),
+                        (Mode::BcbPq, 0),
+                        (Mode::BcbPqSession, 1),
+                        (Mode::BcbPqSession, 3),
+                    ] {
                         let cfg = SimConfig {
                             plan: PlanConfig {
                                 shells: default_shells(),
@@ -64,12 +71,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             gs_buffer_bytes: 64 * 1024 * 1024,
                             dt_s: 1.0,
                             joules_per_bit: 1e-7,
+                            pq_session_epoch_s: 3600.0,
+                            pq_session_redundancy: redundancy.max(1),
                         };
                         let m = run(&cfg)?;
                         let delivered_payload = (m.delivered * cfg.payload_bytes).max(1) as f64;
                         writeln!(
                             out,
-                            "{seed},{routing:?},{mode:?},{isl},{load},{},{},{},{:.4},{:.1},{:.1},{},{},{},{},{},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{:.4},{:.4},{:.3}",
+                            "{seed},{routing:?},{mode:?},{isl},{load},{},{},{},{:.4},{:.1},{:.1},{},{},{},{},{},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{:.4},{:.4},{:.3},{redundancy},{:.4},{:.1},{:.1},{}",
                             m.contacts,
                             m.generated,
                             m.delivered,
@@ -91,11 +100,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             m.route_computations,
                             m.sat_buffer_util_mean,
                             m.sat_buffer_util_max,
-                            m.energy_j_estimate
+                            m.energy_j_estimate,
+                            m.decrypted as f64 / m.generated.max(1) as f64,
+                            pct(&m.plaintext_delays_s, 0.5),
+                            pct(&m.plaintext_delays_s, 0.95),
+                            m.kem_carrying
                         )?;
                         eprintln!(
-                            "seed={seed} isl={isl} load={load} {routing:?} {mode:?}: delivered {}/{}",
-                            m.delivered, m.generated
+                            "seed={seed} isl={isl} load={load} {routing:?} {mode:?} r={redundancy}: delivered {}/{} decrypted {}",
+                            m.delivered, m.generated, m.decrypted
                         );
                     }
                 }

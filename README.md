@@ -14,28 +14,26 @@ studies an **experimental post-quantum key transport** for bundle confidentialit
 | Bundle encoding (primary, payload, hop-count blocks, CRC-32) | Standard BPv7 | [`bp7`](https://crates.io/crates/bp7) 0.12.2 crate (dtn7 project) |
 | BIB-HMAC-SHA2 integrity, BCB-AES-GCM confidentiality (direct keys, no key wrap) | Standard BPSec / RFC 9173 | `bp7` (`bpsec` feature) |
 | Bundle lifetime expiry, store-and-forward, custody-less transfer | BPv7 semantics, simplified | `src/sim.rs` |
-| Per-bundle ML-KEM-768 key transport (`Mode::BcbPq`, extension block type 200) | **Experimental, not novel**: ad-hoc stand-in for the IETF path (BPSec COSE context + COSE ML-KEM recipient), see below | `src/security.rs` |
+| Per-bundle ML-KEM-768 key transport (`Mode::BcbPq`) | **Standards-track encoding, not novel**: BPSec COSE context (draft-ietf-dtn-bpsec-cose-19) + ML-KEM COSE recipient (draft-ietf-cose-pqc-kem-00), checked against the draft's Appendix A vector | `src/cose.rs` |
+| Session-amortised ML-KEM key transport (`Mode::BcbPqSession`) | **Experimental, candidate research contribution** | `src/security.rs`, `src/sim.rs` |
 | Contact-plan generator (Walker-delta LEO, elevation mask) | Ours, simplified physics | `src/contact.rs` |
 | CGR-style earliest-arrival routing; epidemic and first-contact baselines | Ours (not ION's CGR) | `src/sim.rs` |
 
-### Experimental PQ key transport (not novel)
-The mechanism is already on the IETF standards track in a different encoding. draft-ietf-dtn-bpsec-cose-19 (BPSec COSE
-context) supports COSE_Encrypt with recipient key transport in BCBs and points to draft-ietf-cose-pqc-kem (ML-KEM
-as a COSE recipient, described there as "one-pass (store-and-forward)") and draft-ietf-cose-hpke-pq-pqt (PQ and
-PQ/T hybrid HPKE). OrbitLink's block-200 encoding is a simulation stand-in with comparable payload, an ML-KEM-768
-ciphertext of 1,088 bytes, not a proposal. The exact COSE framing overhead is not modelled.
+### Post-quantum key transport
+`BcbPq` implements the IETF path: a BCB with COSE security context 3 holding an untagged COSE_Encrypt (result 96,
+detached payload). Its single recipient uses ML-KEM-768 in Direct Key Agreement mode with
+CEK = KMAC256(shared secret, COSE_KDF_Context). Tests reproduce the draft's Appendix A external_aad and AES-256-GCM
+ciphertext byte for byte, and the NIST KMAC256 samples. Two codepoints are still unassigned in the drafts and use
+placeholders: ML-KEM-768 "TBD2" and `ek` "TBD11 (assumed -4)". The mechanism is not novel.
 
-The sender encapsulates to the destination's long-term ML-KEM-768 public key and uses
-HKDF-SHA256(shared secret) directly as the per-bundle AES-256-GCM key for a standard BCB-AES-GCM block. No key
-wrapping is used anywhere, because the key-wrap library's integrity check is not constant-time; see the threat model. The 1088-byte ML-KEM ciphertext travels in extension block type 200, which is
-in RFC 9171's private/experimental range. The point is that no pre-shared secret and no interactive handshake
-are needed, only the destination's public key. The limitation is that this gives **no sender authentication**;
-see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+`BcbPqSession` is the research question: one encapsulation per (source, destination, hour), with the KEM ciphertext
+carried only by the first r bundles and COSE "direct" recipients after that. It trades bytes against the risk that
+a delivered bundle never meets its session key. Results are in [docs/PAPER_DRAFT.md](docs/PAPER_DRAFT.md).
 
 ## Build, test, reproduce (Linux / WSL2)
 ```bash
-cargo test --release                                   # 16 tests
-cargo run --release --bin orbitlink-sim -- 3 out.csv   # 3 seeds x 48 configurations (12 h simulated each)
+cargo test --release                                   # 25 tests (incl. draft Appendix A and NIST KMAC vectors)
+cargo run --release --bin orbitlink-sim -- 3 out.csv   # 3 seeds x 60 configurations (12 h simulated each)
 bash experiments/run.sh 3                              # same, with environment capture and summary
 ```
 

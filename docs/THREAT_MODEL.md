@@ -15,7 +15,8 @@ interactive key agreement (TLS-style handshakes) is not available.
 | `None` | no | CRC only (not security) | no | no | none |
 | `Bib` (RFC 9173 BIB-HMAC-SHA2, PSK) | no | yes, for PSK holders | yes, among PSK holders | n/a | shared secret at every endpoint |
 | `BcbPsk` (RFC 9173 BCB-AES-GCM, PSK used directly as the key) | yes | yes (GCM) | among PSK holders | yes, if the PSK is never sent over a classical channel | shared secret at every endpoint |
-| `BcbPq` (**experimental**: ML-KEM-768 to destination) | yes | yes (GCM) | **no**: anyone can encapsulate | yes (ML-KEM-768 assumption) | destination public keys only |
+| `BcbPq` (COSE context + ML-KEM-768 recipient, per bundle) | yes | yes (GCM) | **no**: anyone can encapsulate | yes (ML-KEM-768 assumption) | destination public keys only |
+| `BcbPqSession` (**experimental**: one ML-KEM per pair per hour) | yes | yes (GCM) | **no** | yes | destination public keys only; a session key compromise exposes one epoch of one pair |
 
 The simulator uses one network-wide PSK. That is the weakest configuration, and it is the key-distribution
 problem `BcbPq` is meant to remove. Per-pair PSKs would change only the bookkeeping, not the measured sizes.
@@ -57,3 +58,14 @@ problem `BcbPq` is meant to remove. Per-pair PSKs would change only the bookkeep
    - **Not done:** ctgrind (Valgrind with secrets marked undefined) or dudect timing tests of the Rust binaries.
      The sibling project PHOENIX-PQ found that dudect could not detect even its positive control under WSL2,
      because CPU boost could not be disabled. Timing tests must run on quiet bare-metal Linux to mean anything.
+
+## COSE implementation notes (2026-11-22)
+- The decoder accepts only: context 3, target = payload, default AAD scope, one result 96 with detached payload,
+  A256GCM content, exactly one recipient that is either the ML-KEM placeholder algorithm with a 1,088-byte `ek` or
+  COSE `direct` (-6), and an empty recipient ciphertext. Key-wrap recipients are refused, so no unwrap path is
+  reachable (`key_wrap_and_unknown_recipients_refused`).
+- Session keys are cached only after they authenticate a bundle; a forged KEM ciphertext cannot poison the cache
+  (`forged_kem_bundle_does_not_poison_session_cache`).
+- A tampered payload, `ek` or IV is rejected (`tampered_payload_ek_or_iv_rejected`).
+- Placeholder codepoints (TBD2, TBD11) and the PartyU/PartyV discrepancy between the two drafts mean the encoding
+  is not yet interoperable with other implementations.
