@@ -44,7 +44,15 @@ problem `BcbPq` is meant to remove. Per-pair PSKs would change only the bookkeep
    - BIB-HMAC-SHA2 verification in `bp7` uses `hmac` `verify_slice` (constant-time `ct_eq`).
    - BCB-AES-GCM tag check in `aes-gcm` 0.11 uses `ct_eq`.
    - ML-KEM-768 decapsulation uses constant-time select for implicit rejection (`ml-kem` 0.3.4).
-   - **Gap:** `aes-kw` 0.2.1 (pulled in by `bp7` for key unwrap) checks the RFC 3394 integrity value with a
-     plain `==` on 8 bytes (`aes-kw-0.2.1/src/lib.rs`, unwrap). That comparison is not constant-time. The
-     practical impact has not been analysed. A fix belongs upstream (aes-kw / bp7), or the KEK could be used
-     directly as the BCB key without wrapping. Until then, do not treat the BCB modes as side-channel hardened.
+   - **Fixed gap (2026-11-22):** `aes-kw` 0.2.1, pulled in by `bp7` for RFC 9173 key unwrap, checks the
+     RFC 3394 integrity value with a plain `==` (`aes-kw-0.2.1/src/lib.rs`, unwrap), which is not constant-time.
+     OrbitLink no longer uses wrapped keys. BcbPq keys AES-GCM directly with HKDF(ML-KEM shared secret), and
+     BcbPsk keys it directly with the PSK. `accept()` **refuses** any BCB that carries a wrapped-key parameter
+     before bp7 can unwrap it, so attacker-supplied bundles cannot reach that comparison either. Tests:
+     `no_mode_uses_aes_key_wrap`, `wrapped_key_bcb_is_refused_before_unwrap`. A mutation check (guard removed)
+     confirms the second test fails without the guard.
+   - New cost of the fix: BcbPsk uses one key with random 96-bit IVs for every bundle. Stay well below 2^32
+     bundles per PSK (NIST SP 800-38D random-IV limit) and rotate. BcbPq is unaffected: one fresh key per bundle.
+   - **Not done:** ctgrind (Valgrind with secrets marked undefined) or dudect timing tests of the Rust binaries.
+     The sibling project PHOENIX-PQ found that dudect could not detect even its positive control under WSL2,
+     because CPU boost could not be disabled. Timing tests must run on quiet bare-metal Linux to mean anything.

@@ -2,10 +2,14 @@
 //!
 //! STANDARD (RFC 9172 BPSec with RFC 9173 default contexts, implemented by the `bp7` crate):
 //!   Bib    - BIB-HMAC-SHA2 over the payload, pre-shared HMAC key. Integrity only.
-//!   BcbPsk - BCB-AES-GCM on the payload; a fresh content key per bundle is AES-key-wrapped under a
-//!            pre-shared key-encryption key (KEK). Confidentiality + integrity for key holders.
+//!   BcbPsk - BCB-AES-GCM on the payload, keyed directly with a pre-shared 256-bit key and a fresh
+//!            random 96-bit IV per bundle (no wrapped-key parameter). Confidentiality + integrity for
+//!            key holders. Random IVs bound the use of one key: stay well below 2^32 bundles per key
+//!            (NIST SP 800-38D random-IV limit) and rotate the PSK before that.
+//! No mode uses the RFC 9173 wrapped-key parameter: unwrapping goes through `aes-kw` 0.2.1, whose
+//! integrity check is a non-constant-time `==` (see docs/THREAT_MODEL.md), so that path is never reached.
 //! EXPERIMENTAL (this project; not in any RFC):
-//!   BcbPq  - as BcbPsk, but the KEK is derived per bundle as HKDF-SHA256(ML-KEM-768 shared secret)
+//!   BcbPq  - as BcbPsk, but the AES-GCM key is derived per bundle as HKDF-SHA256(ML-KEM-768 shared secret)
 //!            from an encapsulation to the DESTINATION's long-term ML-KEM key. The ML-KEM ciphertext
 //!            travels in extension block type 200 (block types 192-255 are reserved for private /
 //!            experimental use in RFC 9171). No pre-shared secret is needed between endpoints, only
@@ -13,9 +17,7 @@
 //!            It provides NO sender authentication: anyone can encapsulate to a public key.
 
 use bp7::bpsec::rfc9173::{bcb, bib};
-use bp7::bpsec::{
-    BIB_HMAC_SHA2_ID, BcbSecurityContextParameter, BibSecurityContextParameter, wrap_key,
-};
+use bp7::bpsec::{BIB_HMAC_SHA2_ID, BcbSecurityContextParameter, BibSecurityContextParameter};
 use bp7::{Bundle, CanonicalData, EndpointID, canonical::new_canonical_block, crc::CRC_NO};
 use hkdf::Hkdf;
 use ml_kem::kem::{Decapsulate, Encapsulate, Kem, KeyExport, TryKeyInit};
@@ -62,7 +64,7 @@ fn random<const N: usize>() -> [u8; N] {
 /// change the bookkeeping, not the measured sizes or costs).
 pub struct Keys {
     pub hmac_psk: [u8; 32],
-    pub kek_psk: [u8; 32],
+    pub bcb_psk: [u8; 32],
     dk: Vec<ml_kem_768::DecapsulationKey>,
     pub ek: Vec<Vec<u8>>,
 }
@@ -77,7 +79,7 @@ impl Keys {
         }
         Keys {
             hmac_psk: random(),
-            kek_psk: random(),
+            bcb_psk: random(),
             dk,
             ek,
         }
@@ -88,12 +90,14 @@ fn source_eid(node: usize) -> EndpointID {
     EndpointID::with_ipn(node as u64 + 1, 0).expect("valid ipn")
 }
 
-fn pq_kek(ss: &[u8]) -> [u8; 32] {
-    let mut kek = [0u8; 32];
+/// Per-bundle AES-256-GCM key from the ML-KEM shared secret. Every bundle has a fresh encapsulation,
+/// so every bundle has a fresh key ("v1": v0 wrapped a random content key under this value).
+fn pq_key(ss: &[u8]) -> [u8; 32] {
+    let mut key = [0u8; 32];
     Hkdf::<Sha256>::new(None, ss)
-        .expand(b"orbitlink v0 bcb kek", &mut kek)
+        .expand(b"orbitlink v1 bcb key", &mut key)
         .expect("32 bytes");
-    kek
+    key
 }
 
 /// Apply the security mode to a freshly built bundle created at `src` for destination `dst`.
@@ -118,8 +122,8 @@ pub fn protect(
             .map_err(bp)?;
         }
         Mode::BcbPsk | Mode::BcbPq => {
-            let kek = if mode == Mode::BcbPsk {
-                keys.kek_psk
+            let key = if mode == Mode::BcbPsk {
+                keys.bcb_psk
             } else {
                 let ek = ml_kem_768::EncapsulationKey::new_from_slice(&keys.ek[dst])
                     .map_err(|_| SecError::Malformed)?;
@@ -137,14 +141,11 @@ pub fn protect(
                     0,
                     CanonicalData::Unknown(ct.to_vec()),
                 ));
-                pq_kek(&ss)
+                pq_key(&ss)
             };
-            let cek: [u8; 32] = random();
-            let params = BcbSecurityContextParameter {
-                wrapped_key: Some(wrap_key(&kek, &cek).map_err(bp)?),
-                ..Default::default()
-            };
-            bcb::encrypt(b, PAYLOAD, &kek, &random::<12>(), eid, params).map_err(bp)?;
+            // No wrapped key: `key` is the content-encryption key itself (RFC 9173 allows either).
+            let params = BcbSecurityContextParameter::default();
+            bcb::encrypt(b, PAYLOAD, &key, &random::<12>(), eid, params).map_err(bp)?;
         }
     }
     Ok(())
@@ -173,8 +174,19 @@ pub fn accept(b: &mut Bundle, mode: Mode, keys: &Keys, dst: usize) -> Result<(),
             }
         }
         Mode::BcbPsk | Mode::BcbPq => {
-            let kek = if mode == Mode::BcbPsk {
-                keys.kek_psk
+            // Refuse any BCB that carries a wrapped key: bp7 would unwrap it with aes-kw, whose
+            // integrity check is not constant-time, on attacker-chosen input.
+            let bcbs = b.decode_bcbs();
+            let [bcb_block] = bcbs.as_slice() else {
+                return Err(SecError::Malformed);
+            };
+            let params: Option<BcbSecurityContextParameter> =
+                bcb_block.parameters().map_err(|_| SecError::Malformed)?;
+            if params.is_some_and(|p| p.wrapped_key.is_some()) {
+                return Err(SecError::Malformed);
+            }
+            let key = if mode == Mode::BcbPsk {
+                keys.bcb_psk
             } else {
                 let ext = b
                     .canonicals
@@ -187,10 +199,10 @@ pub fn accept(b: &mut Bundle, mode: Mode, keys: &Keys, dst: usize) -> Result<(),
                 let ss = keys.dk[dst]
                     .decapsulate_slice(ct)
                     .map_err(|_| SecError::Malformed)?;
-                pq_kek(&ss)
+                pq_key(&ss)
             };
             let n = block_of(b, bp7::bpsec::CONFIDENTIALITY_BLOCK).ok_or(SecError::Malformed)?;
-            bcb::decrypt(b, n, &kek, CRC_NO).map_err(|_| SecError::Integrity)
+            bcb::decrypt(b, n, &key, CRC_NO).map_err(|_| SecError::Integrity)
         }
     }
 }

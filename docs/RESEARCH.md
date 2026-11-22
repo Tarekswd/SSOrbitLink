@@ -31,3 +31,11 @@
 - RFC 9171, RFC 9172, RFC 9173: block types, security block numbers (11, 12) and context ids (1, 2) as
   implemented in `bp7` (checked in source). Text of the RFCs not re-read; section numbers in comments come from
   the `bp7` source.
+
+## Input from PHOENIX-PQ (github.com/Tarekswd/PHOENIX-PQ, reviewed 2026-11-22)
+- Adopted as next steps: its constant-time methodology. That means ctgrind (Valgrind memcheck with secret
+  inputs marked undefined) and dudect fixed-vs-random tests with input preparation outside the timed region and
+  a positive control. Its finding that WSL2 timing cannot detect the positive control means OrbitLink's
+  protect/accept CPU times are wall-clock costs only, never side-channel evidence.
+- Not applicable: PHX-Tri (X25519 + ML-KEM-768 + HQC-3 hybrid KEM) is C/liboqs/HQC. Its 10 KB ciphertext would
+  make DTN bundle overhead about 9x worse than ML-KEM-768 alone. Recorded as a possible future comparison point only.

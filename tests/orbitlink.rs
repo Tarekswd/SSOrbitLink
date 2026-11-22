@@ -224,3 +224,36 @@ fn invalid_config_rejected() {
     cfg.dt_s = 0.0;
     assert!(run(&cfg).is_err());
 }
+
+#[test]
+fn no_mode_uses_aes_key_wrap() {
+    // aes-kw 0.2.1's unwrap integrity check is not constant-time; no bundle we create may need it.
+    let keys = Keys::generate(3);
+    for mode in [Mode::BcbPsk, Mode::BcbPq] {
+        let b = bundle(mode, &keys);
+        let bcbs = b.decode_bcbs();
+        assert_eq!(bcbs.len(), 1, "{mode:?}");
+        let p: Option<bp7::bpsec::BcbSecurityContextParameter> = bcbs[0].parameters().unwrap();
+        assert!(p.is_none_or(|p| p.wrapped_key.is_none()), "{mode:?}");
+    }
+}
+
+#[test]
+fn wrapped_key_bcb_is_refused_before_unwrap() {
+    // A correctly encrypted bundle that uses the RFC 9173 wrapped-key parameter (KEK = our PSK).
+    // bp7 would decrypt it fine via aes-kw; accept() must refuse it before that code runs.
+    let keys = Keys::generate(3);
+    let mut b = build_bundle(0, 1, b"telemetry frame".to_vec(), 600.0, 0.0, 1);
+    let cek = [7u8; 32];
+    let params = bp7::bpsec::BcbSecurityContextParameter {
+        wrapped_key: Some(bp7::bpsec::wrap_key(&keys.bcb_psk, &cek).unwrap()),
+        ..Default::default()
+    };
+    let src = bp7::EndpointID::with_ipn(1, 0).unwrap();
+    bp7::bpsec::rfc9173::bcb::encrypt(&mut b, 1, &keys.bcb_psk, &[1u8; 12], src, params).unwrap();
+    let mut b = Bundle::try_from(b.to_cbor().as_slice()).unwrap();
+    assert_eq!(
+        security::accept(&mut b, Mode::BcbPsk, &keys, 1),
+        Err(SecError::Malformed)
+    );
+}
