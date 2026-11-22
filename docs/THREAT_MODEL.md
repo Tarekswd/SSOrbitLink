@@ -14,7 +14,7 @@ interactive key agreement (TLS-style handshakes) is not available.
 |---|---|---|---|---|---|
 | `None` | no | CRC only (not security) | no | no | none |
 | `Bib` (RFC 9173 BIB-HMAC-SHA2, PSK) | no | yes, for PSK holders | yes, among PSK holders | n/a | shared secret at every endpoint |
-| `BcbPsk` (RFC 9173 BCB-AES-GCM + AES-KW, PSK KEK) | yes | yes (GCM) | among PSK holders | yes, if the PSK is never sent over a classical channel | shared secret at every endpoint |
+| `BcbPsk` (RFC 9173 BCB-AES-GCM, PSK used directly as the key) | yes | yes (GCM) | among PSK holders | yes, if the PSK is never sent over a classical channel | shared secret at every endpoint |
 | `BcbPq` (**experimental**: ML-KEM-768 to destination) | yes | yes (GCM) | **no**: anyone can encapsulate | yes (ML-KEM-768 assumption) | destination public keys only |
 
 The simulator uses one network-wide PSK. That is the weakest configuration, and it is the key-distribution
