@@ -40,3 +40,11 @@ problem `BcbPq` is meant to remove. Per-pair PSKs would change only the bookkeep
 4. Security is applied only at source and destination. Relays do not verify (no hop-by-hop BIBs), so a compromised
    relay can waste resources with garbage bundles that are dropped only at the destination.
 5. `bp7` and `ml-kem` are third-party crates whose audit status has not been reviewed here.
+6. **Timing side channels (source review, 2026-11-22; no timing measurements done):**
+   - BIB-HMAC-SHA2 verification in `bp7` uses `hmac` `verify_slice` (constant-time `ct_eq`).
+   - BCB-AES-GCM tag check in `aes-gcm` 0.11 uses `ct_eq`.
+   - ML-KEM-768 decapsulation uses constant-time select for implicit rejection (`ml-kem` 0.3.4).
+   - **Gap:** `aes-kw` 0.2.1 (pulled in by `bp7` for key unwrap) checks the RFC 3394 integrity value with a
+     plain `==` on 8 bytes (`aes-kw-0.2.1/src/lib.rs`, unwrap). That comparison is not constant-time. The
+     practical impact has not been analysed. A fix belongs upstream (aes-kw / bp7), or the KEK could be used
+     directly as the BCB key without wrapping. Until then, do not treat the BCB modes as side-channel hardened.
