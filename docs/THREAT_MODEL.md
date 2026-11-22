@@ -32,7 +32,8 @@ problem `BcbPq` is meant to remove. Per-pair PSKs would change only the bookkeep
 
 ## Known limitations
 1. **No sender authentication in BcbPq.** It needs a PQ signature (e.g. ML-DSA) in a BIB, or a PQ-authenticated
-   key directory. Not implemented.
+   key directory. Not implemented. The BPSec COSE context (draft-ietf-dtn-bpsec-cose-19) already profiles ML-DSA
+   and certificate-based source authentication; adopting it is the intended path.
 2. **Replay:** a replayed bundle is a valid bundle. Duplicate suppression by bundle id happens at the
    destination (`duplicates` metric), but that is not a cryptographic replay defence.
 3. **Key directory distribution and revocation over intermittent links** are assumed out of band. This is the

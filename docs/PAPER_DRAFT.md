@@ -2,15 +2,17 @@
 
 *Working draft. Network metrics are SIMULATED, cryptographic CPU times MEASURED, energy ESTIMATED
 (`results/20261122T153249Z/`, 144 runs = 48 configurations x 3 seeds, 12 h simulated each). Sections marked
-**[TODO]** are not done. No novelty is claimed: the IETF DTN WG's BPSec COSE context draft must be read first
-(docs/RESEARCH.md).*
+**[TODO]** are not done. The PQ key transport mechanism itself is NOT novel: it corresponds to the IETF path of the
+BPSec COSE context (draft-ietf-dtn-bpsec-cose-19) with an ML-KEM COSE recipient (draft-ietf-cose-pqc-kem). The
+study's possible contribution is the network-level measurement; see docs/RESEARCH.md.*
 
 ## Abstract
 
 We simulate a 72-satellite LEO constellation serving 6 ground stations over intermittent 256 kbit/s ground links,
 optionally with intra-plane ISLs. The constellation has a 53-degree shell (48 satellites, 550 km) and a near-polar
 shell (24 satellites, 560 km, 97.6 degrees). All traffic is real BPv7 bundles, protected with standard BPSec
-(RFC 9173 BIB-HMAC-SHA2, BCB-AES-GCM) or an experimental per-bundle ML-KEM-768 key transport. The PQ mode adds
+(RFC 9173 BIB-HMAC-SHA2, BCB-AES-GCM) or a per-bundle ML-KEM-768 key transport. That transport is a simulation
+stand-in for the standards-track BPSec COSE context with an ML-KEM recipient, not a new mechanism. The PQ mode adds
 1,145 bytes per bundle, against 48 bytes for PSK-based BCB, and about 110-150 us of CPU per bundle at each end on
 our machine. With CGR-style routing this overhead changes **neither** delivery ratio nor delay in any tested
 configuration (delivery 0.67-0.78). With epidemic routing under high load, where buffers are constrained, PQ
@@ -78,10 +80,11 @@ BcbPq; single network-wide PSK.
 ## 5. Future work
 
 Inter-shell ISLs; node failures and disappearance; ML-DSA BIB for sender authentication; amortised KEM keys;
-comparison with ION CGR on the same contact plan; comparison with the BPSec COSE context
-(draft-ietf-dtn-bpsec-cose).
+comparison with ION CGR on the same contact plan; re-implement BcbPq as the BPSec COSE context with an ML-KEM
+recipient (draft-ietf-dtn-bpsec-cose, draft-ietf-cose-pqc-kem) to measure the real encoding overhead; literature
+search for prior DTN post-quantum performance studies.
 
 ## References (verified; see docs/RESEARCH.md)
 
 RFC 9171 (BPv7), RFC 9172 (BPSec), RFC 9173 (default security contexts), NIST SP 800-38D (GCM),
-FIPS 203 (ML-KEM), draft-ietf-dtn-bpsec-cose-19.
+FIPS 203 (ML-KEM), draft-ietf-dtn-bpsec-cose-19, draft-ietf-cose-pqc-kem, draft-ietf-cose-hpke-pq-pqt.

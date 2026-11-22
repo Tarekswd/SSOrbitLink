@@ -18,14 +18,22 @@
 | 6 | Cost of PQ protection | Bundle bytes (measured CBOR) and CPU (measured) per mode |
 | 7 | Expiry and node disappearance | Lifetime expiry implemented and tested; node failures **not yet** modelled |
 
-## Novelty status (honest)
+## Novelty status (checked 2026-11-22)
 - BPSec and its default contexts are **standard**. Their use here contributes nothing new.
-- KEM-based (HPKE-style) key transport is **established** in other protocols. The IETF DTN WG's BPSec COSE context
-  draft (draft-ietf-dtn-bpsec-cose-19) exists; whether it already enables ML-KEM key transport must be checked
-  before any novelty claim.
-- **Candidate contribution (hypothesis):** quantify end-to-end delivery effects, not only per-bundle bytes, of
-  carrying 1088-byte ML-KEM ciphertexts per bundle on capacity-limited, buffer-limited LEO contact plans, and
-  compare that with amortised alternatives (per-session KEM keys cached at the destination).
+- **Per-bundle ML-KEM key transport for BPSec is NOT novel.** draft-ietf-dtn-bpsec-cose-19 (Sipos, published
+  2026-11-18) states: "For using a PQ key encapsulation mechanism (KEM) within BCB results, there are drafts for both
+  direct ML-KEM use in a COSE recipient [I-D.ietf-cose-pqc-kem] and within Hybrid Public Key Encryption (HPKE)
+  [I-D.ietf-cose-hpke] as both PQ-only and PQ/T hybrids [I-D.ietf-cose-hpke-pq-pqt]." draft-ietf-cose-pqc-kem
+  describes ML-KEM as "a one-pass (store-and-forward) cryptographic mechanism" for sending keying material to a
+  recipient. That is OrbitLink's construction and motivation. The COSE context also profiles ML-DSA signatures
+  and certificate-based authentication of the security source, which addresses BcbPq's missing sender
+  authentication.
+- **Remaining candidate contribution (hypothesis, literature not yet checked):** measuring the *network-level*
+  effect of per-bundle PQ key transport (delivery, delay, buffer pressure) under realistic LEO contact plans and
+  routing strategies. Our data shows no effect under CGR and an 18-25 % delivery loss under buffer-bound epidemic
+  routing. Before claiming this, search for DTN/BPSec post-quantum performance studies.
+- **Engineering next step:** replace the block-200 stand-in with the COSE context
+  (COSE_Encrypt + ML-KEM recipient, or PQ/T HPKE) so bundle sizes match the standards-track encoding.
 
 ## References (verified 2026-11-22 against primary sources)
 - RFC 9171, *Bundle Protocol Version 7* (Burleigh, Fall, Birrane): block type codes 192-255 are "Reserved for
@@ -36,9 +44,11 @@
   configuration". That is what OrbitLink does after removing key wrap.
 - NIST SP 800-38D (GCM): with random IVs, "the total number of invocations of the authenticated encryption function
   shall not exceed 2^32 ... with the given key". This is the BcbPsk rotation bound.
-- draft-ietf-dtn-bpsec-cose-19 (Sipos; active dtn WG draft, updated 2026-11-19): a COSE security context for BPSec.
-  **Novelty impact:** a standard path for KEM/HPKE-style key transport in BPSec may already be under way. Whether
-  it covers ML-KEM is NOT checked yet; read it before claiming anything about the PQ key transport.
+- draft-ietf-dtn-bpsec-cose-19 (Sipos, published 2026-11-18): COSE security context for BPSec. It supports
+  COSE_Encrypt0/Encrypt, COSE_Mac0/Mac and COSE_Sign1/Sign; recipient key wrap and ECDH-ES; PKIX-certificate
+  authentication of security sources; ML-DSA in its algorithm profile; and it points to the PQ KEM drafts below.
+- draft-ietf-cose-pqc-kem, *Post-Quantum Key Encapsulation Mechanisms (PQ KEMs) for COSE*: ML-KEM as a COSE recipient.
+- draft-ietf-cose-hpke-pq-pqt, *COSE HPKE PQ & PQ/T Algorithm Registrations*.
 - Sun-synchronous inclination at 550-560 km: 97.59-97.63 degrees, computed from the J2 nodal-precession condition
   (J2 = 1.08263e-3, R = 6378.137 km). This justifies the 97.6-degree polar shell.
 

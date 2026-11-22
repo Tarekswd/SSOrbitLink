@@ -49,3 +49,9 @@ Polar shell, node failures, ML-DSA sender authentication, amortised KEM, ION com
   (53-degree shell only) was replaced.
 - References verified (RFC 9171 private block range, RFC 9173 ids and optional wrapped key, SP 800-38D 2^32 bound).
   Found draft-ietf-dtn-bpsec-cose-19: possible overlap with the PQ key transport; must be read before any novelty claim.
+
+## 2026-11-22 (later) - novelty check against draft-ietf-dtn-bpsec-cose-19
+- Read the BPSec COSE context draft. It points to ML-KEM COSE recipients (draft-ietf-cose-pqc-kem) and PQ/PQT HPKE
+  (draft-ietf-cose-hpke-pq-pqt) for BCB key transport. **OrbitLink's PQ key transport is therefore not novel**;
+  docs now describe it as a simulation stand-in. Any remaining contribution is the network-level measurement,
+  which still needs its own literature check.

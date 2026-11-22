@@ -14,11 +14,17 @@ studies an **experimental post-quantum key transport** for bundle confidentialit
 | Bundle encoding (primary, payload, hop-count blocks, CRC-32) | Standard BPv7 | [`bp7`](https://crates.io/crates/bp7) 0.12.2 crate (dtn7 project) |
 | BIB-HMAC-SHA2 integrity, BCB-AES-GCM confidentiality (direct keys, no key wrap) | Standard BPSec / RFC 9173 | `bp7` (`bpsec` feature) |
 | Bundle lifetime expiry, store-and-forward, custody-less transfer | BPv7 semantics, simplified | `src/sim.rs` |
-| Per-bundle ML-KEM-768 key transport (`Mode::BcbPq`, extension block type 200) | **Experimental, ours** | `src/security.rs` |
+| Per-bundle ML-KEM-768 key transport (`Mode::BcbPq`, extension block type 200) | **Experimental, not novel**: ad-hoc stand-in for the IETF path (BPSec COSE context + COSE ML-KEM recipient), see below | `src/security.rs` |
 | Contact-plan generator (Walker-delta LEO, elevation mask) | Ours, simplified physics | `src/contact.rs` |
 | CGR-style earliest-arrival routing; epidemic and first-contact baselines | Ours (not ION's CGR) | `src/sim.rs` |
 
-### Experimental PQ key transport
+### Experimental PQ key transport (not novel)
+The mechanism is already on the IETF standards track in a different encoding. draft-ietf-dtn-bpsec-cose-19 (BPSec COSE
+context) supports COSE_Encrypt with recipient key transport in BCBs and points to draft-ietf-cose-pqc-kem (ML-KEM
+as a COSE recipient, described there as "one-pass (store-and-forward)") and draft-ietf-cose-hpke-pq-pqt (PQ and
+PQ/T hybrid HPKE). OrbitLink's block-200 encoding is a simulation stand-in with comparable payload, an ML-KEM-768
+ciphertext of 1,088 bytes, not a proposal. The exact COSE framing overhead is not modelled.
+
 The sender encapsulates to the destination's long-term ML-KEM-768 public key and uses
 HKDF-SHA256(shared secret) directly as the per-bundle AES-256-GCM key for a standard BCB-AES-GCM block. No key
 wrapping is used anywhere, because the key-wrap library's integrity check is not constant-time; see the threat model. The 1088-byte ML-KEM ciphertext travels in extension block type 200, which is

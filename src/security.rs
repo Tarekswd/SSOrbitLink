@@ -8,7 +8,8 @@
 //!            (NIST SP 800-38D random-IV limit) and rotate the PSK before that.
 //! No mode uses the RFC 9173 wrapped-key parameter: unwrapping goes through `aes-kw` 0.2.1, whose
 //! integrity check is a non-constant-time `==` (see docs/THREAT_MODEL.md), so that path is never reached.
-//! EXPERIMENTAL (this project; not in any RFC):
+//! EXPERIMENTAL ENCODING (not in any RFC; the mechanism itself is on the IETF track as the BPSec COSE
+//! context, draft-ietf-dtn-bpsec-cose, with an ML-KEM COSE recipient, draft-ietf-cose-pqc-kem):
 //!   BcbPq  - as BcbPsk, but the AES-GCM key is derived per bundle as HKDF-SHA256(ML-KEM-768 shared secret)
 //!            from an encapsulation to the DESTINATION's long-term ML-KEM key. The ML-KEM ciphertext
 //!            travels in extension block type 200 (block types 192-255 are reserved for private /
