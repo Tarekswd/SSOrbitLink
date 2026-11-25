@@ -1,7 +1,7 @@
 # Amortising Post-Quantum Key Transport in Delay-Tolerant Satellite Networks
 
 *Working draft. Network metrics are SIMULATED and cryptographic CPU times are MEASURED
-(`results/20261122T164252Z/`: 180 runs = 60 configurations x 3 seeds, 12 h simulated each). Sections marked
+(`results/20261125T102421Z/`: 252 runs = 84 configurations x 3 seeds, 12 h simulated each). Sections marked
 **[TODO]** are not done.*
 
 ## Abstract
