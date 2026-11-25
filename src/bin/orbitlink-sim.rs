@@ -36,11 +36,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seeds: u64 = a[1].parse()?;
     let quick = a.iter().any(|x| x == "--quick");
     let horizon = if quick { 2.0 * 3600.0 } else { 12.0 * 3600.0 };
+    const HEADER: &str = "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate,session_redundancy,decrypted_ratio,plaintext_delay_median_s,plaintext_delay_p95_s,kem_carrying,session_refresh_every,session_refresh_s";
+    // Resume: keep complete rows of an existing file (a killed run may leave a truncated last line), skip their configs.
+    let ncols = HEADER.split(',').count();
+    let old = std::fs::read_to_string(&a[2]).unwrap_or_default();
+    let rows: Vec<&str> = old
+        .split_inclusive('\n')
+        .skip(1)
+        .filter(|l| l.ends_with('\n') && l.trim_end().split(',').count() == ncols)
+        .collect();
+    let key = |f: &[&str]| format!("{}|{}|{}|{}", f[..5].join(","), f[27], f[32], f[33]);
+    let done: std::collections::HashSet<String> = rows
+        .iter()
+        .map(|l| key(&l.trim_end().split(',').collect::<Vec<_>>()))
+        .collect();
     let mut out = std::fs::File::create(&a[2])?;
-    writeln!(
-        out,
-        "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate,session_redundancy,decrypted_ratio,plaintext_delay_median_s,plaintext_delay_p95_s,kem_carrying,session_refresh_every,session_refresh_s"
-    )?;
+    writeln!(out, "{HEADER}")?;
+    out.write_all(rows.concat().as_bytes())?;
+    if !done.is_empty() {
+        eprintln!("resuming: {} rows kept", done.len());
+    }
     for seed in 1..=seeds {
         for isl in [false, true] {
             for load in [20.0, 120.0] {
@@ -56,6 +71,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         (Mode::BcbPqSession, 1, 0, 900.0),
                         (Mode::BcbPqSession, 1, 0, 1800.0),
                     ] {
+                        let k = format!("{seed},{routing:?},{mode:?},{isl},{load}|{redundancy}|{refresh}|{refresh_s}");
+                        if done.contains(&k) {
+                            continue;
+                        }
                         let cfg = SimConfig {
                             plan: PlanConfig {
                                 shells: default_shells(),
