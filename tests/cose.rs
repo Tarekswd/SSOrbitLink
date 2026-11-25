@@ -304,3 +304,20 @@ fn periodic_refresh_recarries_ciphertext_every_k_bundles() {
         [true, false, false, false, true, false, false, false, true]
     );
 }
+
+#[test]
+fn time_refresh_recarries_ciphertext_after_interval() {
+    let keys = Keys::generate(3);
+    let mut tx = SenderSessions::new(3600.0, 1, 0);
+    tx.refresh_s = 900.0;
+    // bundles at 0, 300, 600, 900 (refresh due), 1000, 1900 (due again: 1000 s since 900)
+    let carried: Vec<bool> = [0.0, 300.0, 600.0, 900.0, 1000.0, 1900.0]
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            let mut b = build_bundle(0, 1, b"x".to_vec(), 600.0, t, i as u64);
+            tx.protect(&mut b, &keys, 0, 1, t).unwrap()
+        })
+        .collect();
+    assert_eq!(carried, [true, false, false, true, false, true]);
+}

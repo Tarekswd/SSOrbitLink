@@ -49,6 +49,8 @@ pub struct SimConfig {
     pub pq_session_redundancy: u32,
     /// `Mode::BcbPqSession` only: re-carry the ciphertext on every k-th bundle of a session (0 = never).
     pub pq_session_refresh_every: u32,
+    /// `Mode::BcbPqSession` only: re-carry the ciphertext once this many seconds passed since it was last carried (0 = never).
+    pub pq_session_refresh_s: f64,
 }
 
 impl SimConfig {
@@ -217,6 +219,7 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
         cfg.pq_session_redundancy.max(1),
         cfg.pq_session_refresh_every,
     );
+    tx_sessions.refresh_s = cfg.pq_session_refresh_s;
     let mut rx_sessions = ReceiverSessions::default();
     // delivered-but-undecryptable bundles waiting for their session key: (dst, kid) -> [(id, expires)]
     let mut pending: Pending = Default::default();

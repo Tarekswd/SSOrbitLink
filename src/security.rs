@@ -226,6 +226,8 @@ pub struct SenderSessions {
     pub redundancy: u32,
     /// Also carry the ciphertext on every `refresh_every`-th bundle of a session (0 = never).
     pub refresh_every: u32,
+    /// Also carry the ciphertext once `refresh_s` seconds have passed since it was last carried (0 = never).
+    pub refresh_s: f64,
     sessions: HashMap<(usize, usize, u64), Session>,
 }
 
@@ -235,6 +237,7 @@ struct Session {
     cek: [u8; 32],
     carried: u32,
     sent: u32,
+    last_ct_t: f64,
 }
 
 impl SenderSessions {
@@ -247,6 +250,7 @@ impl SenderSessions {
             epoch_s,
             redundancy,
             refresh_every,
+            refresh_s: 0.0,
             sessions: HashMap::new(),
         }
     }
@@ -279,14 +283,17 @@ impl SenderSessions {
                     cek,
                     carried: 0,
                     sent: 0,
+                    last_ct_t: t,
                 })
             }
         };
         let with_ct = s.carried < self.redundancy
-            || (self.refresh_every > 0 && s.sent % self.refresh_every == 0);
+            || (self.refresh_every > 0 && s.sent % self.refresh_every == 0)
+            || (self.refresh_s > 0.0 && t - s.last_ct_t >= self.refresh_s);
         s.sent += 1;
         let r = if with_ct {
             s.carried += 1;
+            s.last_ct_t = t;
             Recipient::MlKem {
                 kem_ct: &s.kem_ct,
                 kid: &s.kid,
