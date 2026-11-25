@@ -115,6 +115,12 @@ Decrypted delivery ratio, with added bytes per bundle in brackets (high load / l
 Not yet tested: contact-aware refresh (on a new first hop), and destination-generated key acknowledgements.
 Every result here uses 3 seeds, so differences below about 0.015 are within the CIs (see summary.md).
 
+![Decrypted delivery ratio for all seven security variants, by routing and load, with ISLs off (left) and on (right)](../results/20261125T102421Z/decrypted.png)
+
+*Figure 1. Bundles delivered and decrypted within their lifetime, over bundles generated (simulated; mean over 3
+seeds). Under CGR at 120/h, the refresh variants (r1k4, r1k8) reach the per-bundle BcbPq bar while r1 and r3 stay
+below it.*
+
 ## 5. Security trade-off
 
 A session key protects up to one hour of bundles between a pair: compromising it exposes that epoch, whereas
