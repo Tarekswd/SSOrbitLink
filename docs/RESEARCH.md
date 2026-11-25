@@ -35,7 +35,15 @@
   Rüsch et al., *Forward Secure Delay-Tolerant Networking* (CHANTS 2017). Rüsch et al. was read in full; it uses
   per-bundle puncturable encryption (pairing-based) with no amortisation and nothing post-quantum. This was a
   limited search (4 queries + 1 paper); a systematic search is needed before any novelty claim.
-- **Next experiment:** contact-aware or periodic ciphertext refresh, to close the CGR decryptability gap.
+- **Periodic refresh (2026-11-25, results/20261125T102421Z):** r = 1 plus the ciphertext on every 8th bundle
+  matches per-bundle decryptability under CGR at high load at 21 % of its bytes, but it barely fires at low load
+  (PAPER_DRAFT.md section 4). Next: time- or contact-based refresh, and destination key acknowledgements.
+- Related work found 2026-11-25 (abstracts read, full texts not yet): Eichen et al., *Practical Post-Quantum
+  Cryptography for Bandwidth Constrained or Non-Terrestrial Networks, and Power Constrained Devices*
+  (arXiv 2607.23007). It replaces PQ certificates with shared secret keys: a KDC plus a PSK handshake plus ML-KEM,
+  which is interactive and handshake-based. Dowling et al., *Key Establishment in the Space Environment*
+  (arXiv 2503.06785): a survey of space key-establishment paradigms and gaps. Neither measures amortised
+  non-interactive PQ key transport.
 - Done: `BcbPq` now uses the COSE context encoding (src/cose.rs); the block-200 stand-in was removed.
 
 ## References (verified 2026-11-22 against primary sources)

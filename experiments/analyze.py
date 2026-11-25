@@ -20,7 +20,10 @@ COLS = [
 
 
 def variant(r):
-    return r["mode"] if r["mode"] != "BcbPqSession" else f"BcbPqSession/r{r['session_redundancy']}"
+    if r["mode"] != "BcbPqSession":
+        return r["mode"]
+    k = r.get("session_refresh_every", "0")
+    return f"BcbPqSession/r{r['session_redundancy']}" + (f"k{k}" if k not in ("", "0") else "")
 
 
 def ci(xs):
@@ -62,13 +65,13 @@ def main(raw, out):
     except ImportError:
         print("matplotlib not installed; skipping plot")
         return
-    variants = ["None", "BcbPsk", "BcbPq", "BcbPqSession/r1", "BcbPqSession/r3"]
+    variants = ["None", "BcbPsk", "BcbPq", "BcbPqSession/r1", "BcbPqSession/r3", "BcbPqSession/r1k4", "BcbPqSession/r1k8"]
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
     for ax, isl in zip(axes, ("false", "true")):
-        width = 0.16
+        width = 0.12
         cases = [(l, r) for l in ("20", "120") for r in ("Cgr", "Epidemic", "FirstContact")]
         for i, v in enumerate(variants):
-            xs = [j + (i - 2) * width for j in range(len(cases))]
+            xs = [j + (i - 3) * width for j in range(len(cases))]
             ys = [summary.get((isl, l, r, v), {}).get("decrypted_ratio", float("nan")) for l, r in cases]
             ax.bar(xs, ys, width, label=v)
         ax.set_xticks(range(len(cases)), [f"{r}\n{l}/h" for l, r in cases], fontsize=8)

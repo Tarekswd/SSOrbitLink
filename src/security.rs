@@ -224,6 +224,8 @@ pub fn accept(b: &mut Bundle, mode: Mode, keys: &Keys, dst: usize) -> Result<(),
 pub struct SenderSessions {
     pub epoch_s: f64,
     pub redundancy: u32,
+    /// Also carry the ciphertext on every `refresh_every`-th bundle of a session (0 = never).
+    pub refresh_every: u32,
     sessions: HashMap<(usize, usize, u64), Session>,
 }
 
@@ -232,10 +234,11 @@ struct Session {
     kem_ct: Vec<u8>,
     cek: [u8; 32],
     carried: u32,
+    sent: u32,
 }
 
 impl SenderSessions {
-    pub fn new(epoch_s: f64, redundancy: u32) -> Self {
+    pub fn new(epoch_s: f64, redundancy: u32, refresh_every: u32) -> Self {
         assert!(
             epoch_s > 0.0 && redundancy >= 1,
             "epoch > 0, redundancy >= 1"
@@ -243,6 +246,7 @@ impl SenderSessions {
         SenderSessions {
             epoch_s,
             redundancy,
+            refresh_every,
             sessions: HashMap::new(),
         }
     }
@@ -274,10 +278,13 @@ impl SenderSessions {
                     kem_ct,
                     cek,
                     carried: 0,
+                    sent: 0,
                 })
             }
         };
-        let with_ct = s.carried < self.redundancy;
+        let with_ct = s.carried < self.redundancy
+            || (self.refresh_every > 0 && s.sent % self.refresh_every == 0);
+        s.sent += 1;
         let r = if with_ct {
             s.carried += 1;
             Recipient::MlKem {

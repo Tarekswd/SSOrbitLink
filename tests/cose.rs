@@ -231,7 +231,7 @@ fn wrong_recipient_cannot_decrypt() {
 #[test]
 fn session_mode_carries_kem_only_in_first_r_bundles() {
     let keys = Keys::generate(3);
-    let mut tx = SenderSessions::new(3600.0, 2);
+    let mut tx = SenderSessions::new(3600.0, 2, 0);
     let mut rx = ReceiverSessions::default();
     let mut sizes = vec![];
     let mut bundles = vec![];
@@ -267,7 +267,7 @@ fn session_mode_carries_kem_only_in_first_r_bundles() {
 #[test]
 fn forged_kem_bundle_does_not_poison_session_cache() {
     let keys = Keys::generate(3);
-    let mut tx = SenderSessions::new(3600.0, 1);
+    let mut tx = SenderSessions::new(3600.0, 1, 0);
     let mut rx = ReceiverSessions::default();
     let mut good = build_bundle(0, 1, b"a".to_vec(), 600.0, 0.0, 1);
     tx.protect(&mut good, &keys, 0, 1, 0.0).unwrap();
@@ -287,4 +287,20 @@ fn forged_kem_bundle_does_not_poison_session_cache() {
         rx.accept(&mut good, &keys, 1).unwrap(),
         SessionAccept::Ok { learned: Some(_) }
     ));
+}
+
+#[test]
+fn periodic_refresh_recarries_ciphertext_every_k_bundles() {
+    let keys = Keys::generate(3);
+    let mut tx = SenderSessions::new(3600.0, 1, 4);
+    let carried: Vec<bool> = (0..9)
+        .map(|i| {
+            let mut b = build_bundle(0, 1, b"x".to_vec(), 600.0, i as f64, i);
+            tx.protect(&mut b, &keys, 0, 1, i as f64).unwrap()
+        })
+        .collect();
+    assert_eq!(
+        carried,
+        [true, false, false, false, true, false, false, false, true]
+    );
 }

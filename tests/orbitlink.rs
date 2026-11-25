@@ -30,6 +30,7 @@ fn sim_cfg(routing: Routing, mode: Mode, hours: f64) -> SimConfig {
         joules_per_bit: 1e-7,
         pq_session_epoch_s: 3600.0,
         pq_session_redundancy: 1,
+        pq_session_refresh_every: 0,
     }
 }
 

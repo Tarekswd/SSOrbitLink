@@ -47,6 +47,8 @@ pub struct SimConfig {
     /// the ML-KEM ciphertext.
     pub pq_session_epoch_s: f64,
     pub pq_session_redundancy: u32,
+    /// `Mode::BcbPqSession` only: re-carry the ciphertext on every k-th bundle of a session (0 = never).
+    pub pq_session_refresh_every: u32,
 }
 
 impl SimConfig {
@@ -213,6 +215,7 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
     let mut tx_sessions = SenderSessions::new(
         cfg.pq_session_epoch_s.max(1.0),
         cfg.pq_session_redundancy.max(1),
+        cfg.pq_session_refresh_every,
     );
     let mut rx_sessions = ReceiverSessions::default();
     // delivered-but-undecryptable bundles waiting for their session key: (dst, kid) -> [(id, expires)]

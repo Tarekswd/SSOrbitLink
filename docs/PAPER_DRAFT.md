@@ -80,12 +80,40 @@ The COSE encoding costs 39 bytes per bundle more than our earlier ad-hoc stand-i
 4. **The gap to PSK remains.** Even the best PQ variant stays below BcbPsk under epidemic routing at high load
    (0.323-0.340 vs 0.382-0.403).
 
-## 4. Discussion: towards a better policy **[TODO-EXPERIMENT]**
+## 4. Periodic ciphertext refresh (results/20261125T102421Z)
 
-Finding 1 suggests carrying the ciphertext *where it will be needed* rather than only first: periodically
-(every k-th bundle), or whenever a session's bundles take a new first hop or contact. A hypothesis to test:
-contact-aware refresh closes the CGR decryptability gap at a fraction of per-bundle bytes. Destination-generated
-key acknowledgements, sent back when contacts allow, are another option to evaluate.
+Finding 1 suggests carrying the ciphertext *where it will be needed* rather than only first. We tested the
+simplest form: r = 1 plus the ciphertext on every k-th bundle of a session (k = 4, 8; `refresh_every`). The other
+cells of this run reproduce section 3 exactly (the simulator is deterministic per seed).
+
+Decrypted delivery ratio, with added bytes per bundle in brackets (high load / low load):
+
+| ISL | load | routing | BcbPq | r=1 | r=3 | r=1, k=4 | r=1, k=8 | BcbPsk |
+|---|---|---|---|---|---|---|---|---|
+| off | 120 | CGR | 0.678 | 0.644 | 0.651 | 0.678 | 0.678 | 0.678 |
+| on | 120 | CGR | 0.778 | 0.751 | 0.755 | 0.778 | 0.778 | 0.778 |
+| off | 20 | CGR | 0.672 | 0.653 | 0.667 | 0.664 | 0.653 | 0.672 |
+| on | 20 | CGR | 0.772 | 0.756 | 0.771 | 0.766 | 0.758 | 0.772 |
+| off | 120 | Epidemic | 0.283 | 0.322 | 0.323 | 0.348 | 0.362 | 0.382 |
+| on | 120 | Epidemic | 0.331 | 0.323 | 0.340 | 0.372 | 0.373 | 0.403 |
+| off | 120 | FirstContact | 0.226 | 0.130 | 0.176 | 0.214 | 0.201 | 0.222 |
+| on | 120 | FirstContact | 0.332 | 0.218 | 0.266 | 0.320 | 0.304 | 0.327 |
+| bytes | | | 1,184 / 1,184 | 132 / 349 | 224 / 807 | 378 / 457 | 243 / 353 | 48 / 48 |
+
+5. **At high load, periodic refresh closes the CGR gap.** k = 8 matches per-bundle BcbPq (0.678, 0.778) at 21 %
+   of its bytes (243 vs 1,184), and beats r = 3 on both decryptability and bytes. Refreshing spreads key-carrying
+   bundles over the epoch, so one failed early burst no longer strands the rest of the session.
+6. **At low load, refresh rarely fires.** Sessions hold only a few bundles per hour, so k = 8 is almost r = 1
+   (360 vs 354 key-carrying bundles) and k = 4 sits between r = 1 and r = 3. Here r = 3 is better (0.667 vs 0.664)
+   but costs 807 vs 457 bytes. A rule keyed to bundle count does not adapt to load; a time- or contact-based
+   rule is the next variant.
+7. **Under epidemic routing at high load, refresh is the best PQ variant.** k = 8 reaches 0.362 / 0.373, narrowing
+   the gap to BcbPsk to 0.02-0.03 (from 0.06-0.08 for r = 1).
+8. **Under FirstContact, refresh recovers most of the loss.** k = 4 recovers 0.214 of 0.226 and 0.320 of 0.332, at
+   32 % of per-bundle bytes.
+
+Not yet tested: contact-aware refresh (on a new first hop), and destination-generated key acknowledgements.
+Every result here uses 3 seeds, so differences below about 0.015 are within the CIs (see summary.md).
 
 ## 5. Security trade-off
 
