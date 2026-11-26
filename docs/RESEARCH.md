@@ -38,6 +38,11 @@
 - **Periodic refresh (2026-11-25, results/20261125T102421Z):** r = 1 plus the ciphertext on every 8th bundle
   matches per-bundle decryptability under CGR at high load at 21 % of its bytes, but it barely fires at low load
   (PAPER_DRAFT.md section 4). Next: time- or contact-based refresh, and destination key acknowledgements.
+- **Time-based refresh, 10 seeds (2026-11-26, results/20261125T141910Z, 1,080 runs):** r = 1 plus the ciphertext
+  again once 900 s have passed since it was last carried is within 0.001 of per-bundle decryptability in all four
+  CGR cells, at 22 % (high load) / 56 % (low load) of the per-bundle bytes, and is near the best variant in every
+  routing regime. Under FirstContact at high load, every-4th-bundle refresh is still slightly better. The 3-seed
+  findings hold at 10 seeds. Next: contact-aware refresh, a sweep over t, destination key acknowledgements.
 - Related work found 2026-11-25 (abstracts read, full texts not yet): Eichen et al., *Practical Post-Quantum
   Cryptography for Bandwidth Constrained or Non-Terrestrial Networks, and Power Constrained Devices*
   (arXiv 2607.23007). It replaces PQ certificates with shared secret keys: a KDC plus a PSK handshake plus ML-KEM,
