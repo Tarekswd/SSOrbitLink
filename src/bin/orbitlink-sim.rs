@@ -71,7 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         (Mode::BcbPqSession, 1, 0, 900.0),
                         (Mode::BcbPqSession, 1, 0, 1800.0),
                     ] {
-                        let k = format!("{seed},{routing:?},{mode:?},{isl},{load}|{redundancy}|{refresh}|{refresh_s}");
+                        let k = format!(
+                            "{seed},{routing:?},{mode:?},{isl},{load}|{redundancy}|{refresh}|{refresh_s}"
+                        );
                         if done.contains(&k) {
                             continue;
                         }
