@@ -1,7 +1,8 @@
 # Amortising Post-Quantum Key Transport in Delay-Tolerant Satellite Networks
 
 *Working draft. Network metrics are SIMULATED and cryptographic CPU times are MEASURED
-(`results/20261125T141910Z/`: 1,080 runs = 108 configurations x 10 seeds, 12 h simulated each). Sections marked
+(`results/20261126T200000Z/`: 1,440 runs = 144 configurations x 10 seeds, 12 h simulated each; the first 1,080
+runs are `results/20261125T141910Z/`, which the simulator reproduces exactly per seed). Sections marked
 **[TODO]** are not done.*
 
 ## Abstract
@@ -21,7 +22,8 @@ first-contact (random-walk) routing it lowers it by up to 0.121 absolute: with r
 delivered bundles are never decrypted. The less predictable the routing, the less safe amortisation becomes,
 because delivered bundles miss every key-carrying bundle of their session before they expire. Re-carrying the
 ciphertext once 15 minutes have passed since it was last sent restores per-bundle decryptability under CGR at both
-loads (within 0.001) for 22-56 % of the per-bundle bytes.
+loads (within 0.001) for 22-56 % of the per-bundle bytes. Under first-contact routing, re-carrying it whenever the
+source's uplink satellite changes comes within 0.010 of per-bundle decryptability at 38-76 % of the bytes.
 
 ## 1. Contribution and novelty status
 
@@ -124,15 +126,49 @@ Decrypted delivery ratio (mean over 10 seeds), with added bytes per bundle in th
    (0.205 vs 0.207, 0.299 vs 0.300), with t = 900 s using fewer bytes; k = 4 and k = 8 fall behind because they
    rarely fire.
 
-Overall, t = 900 s is the only setting tested here that stays near the best variant in every routing regime and
-load. Not yet tested: contact-aware refresh (on a new first hop), other values of t, and destination-generated key
-acknowledgements.
+Overall, t = 900 s is the only setting of this group that stays near the best variant in every routing regime and
+load.
 
-![Decrypted delivery ratio for all nine security variants, by routing and load, with ISLs off (left) and on (right)](../results/20261125T141910Z/decrypted.png)
+### Shorter intervals and uplink-change refresh
+
+Two more rules, same runs and seeds: t = 300 s and t = 600 s, and an uplink rule (r1u) that carries the
+ciphertext again whenever the satellite the source will upload to changes. That satellite is the first contact from
+the source that is open at or after the bundle's creation; it approximates the first hop, which the simulator does
+not decide at creation time. Decrypted delivery ratio (mean +/- 95 % CI half-width, 10 seeds):
+
+| ISL | load | routing | BcbPq | r=1, k=4 | t = 300 s | t = 600 s | t = 900 s | uplink (r1u) | BcbPsk |
+|---|---|---|---|---|---|---|---|---|---|
+| off | 120 | FirstContact | 0.227 +/- 0.003 | 0.216 | 0.220 | 0.203 | 0.209 | 0.221 +/- 0.003 | 0.223 |
+| on | 120 | FirstContact | 0.336 +/- 0.004 | 0.324 | 0.328 | 0.310 | 0.317 | 0.326 +/- 0.004 | 0.330 |
+| off | 20 | FirstContact | 0.223 +/- 0.007 | 0.178 | 0.218 | 0.206 | 0.205 | 0.223 +/- 0.007 | 0.223 |
+| on | 20 | FirstContact | 0.318 +/- 0.011 | 0.268 | 0.313 | 0.301 | 0.299 | 0.316 +/- 0.011 | 0.318 |
+| off | 120 | Epidemic | 0.285 | 0.349 | 0.341 | 0.354 | 0.358 | 0.339 | 0.383 |
+| on | 120 | Epidemic | 0.328 | 0.370 | 0.364 | 0.373 | 0.371 | 0.363 | 0.401 |
+| bytes | | | 1,184 / 1,184 | 378 / 460 | 462 / 918 | 320 / 764 | 262 / 668 | 449 / 901 | 48 / 48 |
+
+Under CGR every rule in this table except k = 4 at low load (0.670 vs 0.677) is within 0.001 of per-bundle BcbPq
+(summary.md).
+
+10. **Under FirstContact, uplink-change refresh closes the gap at both loads.** r1u is within 0.000-0.010 of
+    per-bundle BcbPq in all four FirstContact cells (0.221 vs 0.227, 0.326 vs 0.336, 0.223 vs 0.223, 0.316 vs
+    0.318), where the best earlier rules left 0.011-0.012 (k = 4 at high load) or 0.018-0.019 (t = 900 s at low
+    load). It costs 38 % of per-bundle bytes at high load and 76 % at low load, because a ground station's uplink
+    satellite changes many times per hour.
+11. **Most of that gain comes from refreshing often.** t = 300 s is within 0.001-0.005 of r1u in every
+    FirstContact cell, at about the same bytes (462 / 918 vs 449 / 901). Knowing the uplink adds little over a
+    short timer in this constellation, and a timer needs no contact plan.
+12. **Under epidemic routing, frequent refresh hurts.** Larger bundles cost buffer space: at high load r1u and
+    t = 300 s (0.339-0.364) fall below t = 600-900 s (0.354-0.373).
+
+So the refresh rule should follow the routing regime: t = 600-900 s for CGR and epidemic routing, and t = 300 s or
+uplink-change refresh for first-contact routing. Not yet tested: refresh on the actual first hop (needs per-bundle
+routing decisions at the source), and destination-generated key acknowledgements.
+
+![Decrypted delivery ratio for all twelve security variants, by routing and load, with ISLs off (left) and on (right)](../results/20261126T200000Z/decrypted.png)
 
 *Figure 1. Bundles delivered and decrypted within their lifetime, over bundles generated (simulated; mean over 10
-seeds). Under CGR, r1t900 reaches the per-bundle BcbPq bar at both loads; r1k4 and r1k8 do so only at 120/h, and
-r1 and r3 stay below it at 120/h.*
+seeds). Under CGR every refresh rule reaches the per-bundle BcbPq bar at high load, and t = 300-900 s and r1u also
+at low load; r1 and r3 stay below it at 120/h. Under FirstContact, r1u and r1t300 come closest to BcbPq.*
 
 ## 5. Security trade-off
 

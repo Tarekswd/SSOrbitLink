@@ -72,21 +72,21 @@ def main(raw, out):
                 "BcbPqSession/r1t300", "BcbPqSession/r1t600", "BcbPqSession/r1t900", "BcbPqSession/r1t1800",
                 "BcbPqSession/r1u"]
     variants = [v for v in variants if any(k[3] == v for k in summary)]  # older runs lack some variants
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
     for ax, isl in zip(axes, ("false", "true")):
         width = 0.8 / len(variants)
         cases = [(l, r) for l in ("20", "120") for r in ("Cgr", "Epidemic", "FirstContact")]
         for i, v in enumerate(variants):
             xs = [j + (i - (len(variants) - 1) / 2) * width for j in range(len(cases))]
             ys = [summary.get((isl, l, r, v), {}).get("decrypted_ratio", float("nan")) for l, r in cases]
-            ax.bar(xs, ys, width, label=v)
+            ax.bar(xs, ys, width, label=v, color=plt.cm.tab20(i))  # default cycle has 10 colours, 12 variants
         ax.set_xticks(range(len(cases)), [f"{r}\n{l}/h" for l, r in cases], fontsize=8)
         ax.set_title(f"ISL {'on' if isl == 'true' else 'off'}")
         ax.grid(axis="y", alpha=0.3)
     axes[0].set_ylabel("delivered and decrypted within lifetime (simulated)")
-    axes[0].legend(fontsize=7)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=6, fontsize=7)  # below the plots: covers no bars
     fig.suptitle("OrbitLink: per-bundle vs session-amortised ML-KEM (COSE) key transport")
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
     fig.savefig(out / "decrypted.png", dpi=130)
     print(f"wrote {out / 'decrypted.png'}")
 

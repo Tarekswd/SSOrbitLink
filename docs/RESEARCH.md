@@ -43,6 +43,10 @@
   CGR cells, at 22 % (high load) / 56 % (low load) of the per-bundle bytes, and is near the best variant in every
   routing regime. Under FirstContact at high load, every-4th-bundle refresh is still slightly better. The 3-seed
   findings hold at 10 seeds. Next: contact-aware refresh, a sweep over t, destination key acknowledgements.
+- **Uplink-change refresh and t = 300/600 s (2026-11-27, results/20261126T200000Z, 1,440 runs):** carrying the
+  ciphertext again whenever the source's uplink satellite changes (r1u) comes within 0.010 of per-bundle
+  decryptability under FirstContact at both loads (38-76 % of bytes); t = 300 s does almost as well at the same cost.
+  Under epidemic routing frequent refresh hurts (t = 600-900 s best). Refresh rule should follow the routing regime.
 - Related work found 2026-11-25 (abstracts read, full texts not yet): Eichen et al., *Practical Post-Quantum
   Cryptography for Bandwidth Constrained or Non-Terrestrial Networks, and Power Constrained Devices*
   (arXiv 2607.23007). It replaces PQ certificates with shared secret keys: a KDC plus a PSK handshake plus ML-KEM,
