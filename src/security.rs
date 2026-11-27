@@ -228,6 +228,8 @@ pub struct SenderSessions {
     pub refresh_every: u32,
     /// Also carry the ciphertext once `refresh_s` seconds have passed since it was last carried (0 = never).
     pub refresh_s: f64,
+    /// Also carry the ciphertext when the source's uplink satellite differs from the one that took the last ciphertext.
+    pub refresh_uplink: bool,
     sessions: HashMap<(usize, usize, u64), Session>,
 }
 
@@ -238,6 +240,7 @@ struct Session {
     carried: u32,
     sent: u32,
     last_ct_t: f64,
+    last_uplink: Option<usize>,
 }
 
 impl SenderSessions {
@@ -251,6 +254,7 @@ impl SenderSessions {
             redundancy,
             refresh_every,
             refresh_s: 0.0,
+            refresh_uplink: false,
             sessions: HashMap::new(),
         }
     }
@@ -263,6 +267,19 @@ impl SenderSessions {
         src: usize,
         dst: usize,
         t: f64,
+    ) -> Result<bool, SecError> {
+        self.protect_via(b, keys, src, dst, t, None)
+    }
+
+    /// As `protect`, with the source's current or next uplink satellite (for `refresh_uplink`).
+    pub fn protect_via(
+        &mut self,
+        b: &mut Bundle,
+        keys: &Keys,
+        src: usize,
+        dst: usize,
+        t: f64,
+        uplink: Option<usize>,
     ) -> Result<bool, SecError> {
         let eid = source_eid(src);
         let epoch = (t / self.epoch_s) as u64;
@@ -284,16 +301,19 @@ impl SenderSessions {
                     carried: 0,
                     sent: 0,
                     last_ct_t: t,
+                    last_uplink: None,
                 })
             }
         };
         let with_ct = s.carried < self.redundancy
             || (self.refresh_every > 0 && s.sent % self.refresh_every == 0)
-            || (self.refresh_s > 0.0 && t - s.last_ct_t >= self.refresh_s);
+            || (self.refresh_s > 0.0 && t - s.last_ct_t >= self.refresh_s)
+            || (self.refresh_uplink && uplink.is_some() && uplink != s.last_uplink);
         s.sent += 1;
         let r = if with_ct {
             s.carried += 1;
             s.last_ct_t = t;
+            s.last_uplink = uplink;
             Recipient::MlKem {
                 kem_ct: &s.kem_ct,
                 kid: &s.kid,

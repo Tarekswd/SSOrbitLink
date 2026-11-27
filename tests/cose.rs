@@ -321,3 +321,21 @@ fn time_refresh_recarries_ciphertext_after_interval() {
         .collect();
     assert_eq!(carried, [true, false, false, true, false, true]);
 }
+
+#[test]
+fn uplink_refresh_recarries_ciphertext_on_new_uplink() {
+    let keys = Keys::generate(3);
+    let mut tx = SenderSessions::new(3600.0, 1, 0);
+    tx.refresh_uplink = true;
+    // uplinks: 7 (first), 7, 9 (new), 9, none (no contact ahead: no refresh), 7 (new again)
+    let carried: Vec<bool> = [Some(7), Some(7), Some(9), Some(9), None, Some(7)]
+        .iter()
+        .enumerate()
+        .map(|(i, &u)| {
+            let t = i as f64 * 10.0;
+            let mut b = build_bundle(0, 1, b"x".to_vec(), 600.0, t, i as u64);
+            tx.protect_via(&mut b, &keys, 0, 1, t, u).unwrap()
+        })
+        .collect();
+    assert_eq!(carried, [true, false, true, false, false, true]);
+}

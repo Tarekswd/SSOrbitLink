@@ -25,7 +25,8 @@ def variant(r):
     k = r.get("session_refresh_every", "0")
     ts = r.get("session_refresh_s", "0")
     return (f"BcbPqSession/r{r['session_redundancy']}" + (f"k{k}" if k not in ("", "0") else "")
-            + (f"t{float(ts):.0f}" if ts not in ("", "0", "0.0", "0.000") and float(ts) > 0 else ""))
+            + (f"t{float(ts):.0f}" if ts not in ("", "0", "0.0", "0.000") and float(ts) > 0 else "")
+            + ("u" if r.get("session_refresh_uplink", "0") == "1" else ""))
 
 
 def ci(xs):
@@ -68,13 +69,15 @@ def main(raw, out):
         print("matplotlib not installed; skipping plot")
         return
     variants = ["None", "BcbPsk", "BcbPq", "BcbPqSession/r1", "BcbPqSession/r3", "BcbPqSession/r1k4", "BcbPqSession/r1k8",
-                "BcbPqSession/r1t900", "BcbPqSession/r1t1800"]
+                "BcbPqSession/r1t300", "BcbPqSession/r1t600", "BcbPqSession/r1t900", "BcbPqSession/r1t1800",
+                "BcbPqSession/r1u"]
+    variants = [v for v in variants if any(k[3] == v for k in summary)]  # older runs lack some variants
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
     for ax, isl in zip(axes, ("false", "true")):
-        width = 0.09
+        width = 0.8 / len(variants)
         cases = [(l, r) for l in ("20", "120") for r in ("Cgr", "Epidemic", "FirstContact")]
         for i, v in enumerate(variants):
-            xs = [j + (i - 4) * width for j in range(len(cases))]
+            xs = [j + (i - (len(variants) - 1) / 2) * width for j in range(len(cases))]
             ys = [summary.get((isl, l, r, v), {}).get("decrypted_ratio", float("nan")) for l, r in cases]
             ax.bar(xs, ys, width, label=v)
         ax.set_xticks(range(len(cases)), [f"{r}\n{l}/h" for l, r in cases], fontsize=8)

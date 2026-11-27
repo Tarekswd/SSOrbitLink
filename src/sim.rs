@@ -51,6 +51,8 @@ pub struct SimConfig {
     pub pq_session_refresh_every: u32,
     /// `Mode::BcbPqSession` only: re-carry the ciphertext once this many seconds passed since it was last carried (0 = never).
     pub pq_session_refresh_s: f64,
+    /// BcbPqSession: also carry the ciphertext when the source's uplink satellite changes.
+    pub pq_session_refresh_uplink: bool,
 }
 
 impl SimConfig {
@@ -220,6 +222,7 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
         cfg.pq_session_refresh_every,
     );
     tx_sessions.refresh_s = cfg.pq_session_refresh_s;
+    tx_sessions.refresh_uplink = cfg.pq_session_refresh_uplink;
     let mut rx_sessions = ReceiverSessions::default();
     // delivered-but-undecryptable bundles waiting for their session key: (dst, kid) -> [(id, expires)]
     let mut pending: Pending = Default::default();
@@ -274,8 +277,20 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
             let mut b = build_bundle(src, dst, payload, cfg.lifetime_s, t, seq);
             let t0 = Instant::now();
             if cfg.mode == Mode::BcbPqSession {
+                // shortcut: uplink = earliest-starting contact from src still open at or after t (a
+                // proxy for the first hop; the real first hop depends on routing), upgrade if routing exposes it.
+                let uplink = cfg
+                    .pq_session_refresh_uplink
+                    .then(|| {
+                        by_from[src]
+                            .iter()
+                            .map(|&ci| plan.contacts[ci])
+                            .find(|c| c.end > t)
+                            .map(|c| c.to)
+                    })
+                    .flatten();
                 m.kem_carrying += tx_sessions
-                    .protect(&mut b, &keys, src, dst, t)
+                    .protect_via(&mut b, &keys, src, dst, t, uplink)
                     .map_err(|e| e.to_string())? as usize;
             } else {
                 security::protect(&mut b, cfg.mode, &keys, src, dst).map_err(|e| e.to_string())?;
