@@ -79,3 +79,35 @@
   protect/accept CPU times are wall-clock costs only, never side-channel evidence.
 - Not applicable: PHX-Tri (X25519 + ML-KEM-768 + HQC-3 hybrid KEM) is C/liboqs/HQC. Its 10 KB ciphertext would
   make DTN bundle overhead about 9x worse than ML-KEM-768 alone. Recorded as a possible future comparison point only.
+
+## Systematic novelty search (2026-11-27)
+
+Question: does prior work (a) reuse one KEM encapsulation / session key across several bundles without
+acknowledgements, or (b) measure how often delivered bundles can be decrypted under different DTN routing?
+
+Queries (Firecrawl research index = arXiv/PubMed/bioRxiv; web = general search):
+1. research: "post-quantum key encapsulation ML-KEM Kyber delay-tolerant networking bundle protocol security"
+2. research: "amortized key establishment session key reuse delay tolerant network without acknowledgements decryption failure"
+3. research: "post-quantum cryptography LEO satellite constellation key exchange overhead routing simulation"
+4. research: "delay tolerant network bundle encryption key availability at destination routing epidemic contact graph routing simulation security overhead"
+5. web: "BPSec post-quantum key encapsulation bundle protocol DTN ML-KEM"
+6. web: "delay tolerant network key management asynchronous key establishment no round trip bundle encryption session key reuse"
+7. web: site:datatracker.ietf.org dtn bpsec key management post-quantum OR KEM
+8. web: KEM encapsulation reuse across one-way messages / amortised post-quantum ciphertext overhead
+9. web: "delay tolerant" "post-quantum" key encapsulation satellite simulation 2025/2026
+
+Read (question-answering pass over the full text; verdict for (a) / (b)):
+| work | what it does | (a) | (b) |
+|---|---|---|---|
+| Detke, Madoery, Cherini, Fraire, Finochietto, WiSEE 2026 (hal-05850001) | MILP minimising pre-provisioned symmetric key scopes for CGR routes; 20-node polar scenario | no | no (exposure and operation density only) |
+| Würbs, Baumgärtner, Wallum, BPKD, SpaceOps 2025 | public-key distribution by keystore snapshots; derived long-lived symmetric keys; docker testbed | no per-session KEM | no |
+| dos Santos, Reith, Koranek, ECCWS (survey) | ML-KEM in DTN: side channels, sizes; names key expiry in transit as open | no | no (no simulation) |
+| Tanchev, STINT 2026 (slides) | per-bundle encapsulation to receiver epoch KEM keys, self-authenticating addresses | no | no |
+| Kedrowitsch, VT dissertation 2025 | ML-KEM under intermittent computing; BPv7 module for ns-3 | no | no |
+| draft-ietf-dtn-bpsec-default-sc | became RFC 9173 (already covered) | - | - |
+Also surfaced, not DTN: De Zuane et al., arXiv 2605.28660 (quantum-safe IKE for satellites, interactive);
+Burkhardt et al., arXiv 2206.00978 (Kyber key exchange with a nanosatellite); Herzinger et al., arXiv 2610.32356
+(large PQ KEMs in IKEv2).
+
+Verdict: no prior work found for (a) or (b). The candidate contribution stands. Not covered: paywalled IEEE/ACM
+full texts beyond what the web index returned; non-English literature.

@@ -30,10 +30,21 @@ source's uplink satellite changes comes within 0.010 of per-bundle decryptabilit
 - **Not novel:** ML-KEM key transport in BPSec, which is the IETF path (bpsec-cose + cose-pqc-kem). We implement and
   measure it.
 - **Candidate contribution:** the amortisation/decryptability trade-off of post-quantum key transport in
-  acknowledgement-free DTNs, quantified per routing regime. A limited literature check found no prior
-  measurement of this: the IETF drafts, the DTKA draft, the DTN key-management survey (Menesidou et al. 2017) and
-  Rüsch et al. (CHANTS 2017, per-bundle puncturable encryption, no amortisation, not PQ). **[TODO]** A systematic
-  literature search before submission.
+  acknowledgement-free DTNs, quantified per routing regime, and refresh rules (count-, time- and uplink-based) that
+  close it. A literature search (2026-11-22 and 2026-11-27; queries and verdicts in docs/RESEARCH.md) found no
+  prior work that reuses one KEM encapsulation across bundles or measures decryptability against DTN routing:
+  - closest in topic: Detke et al. (WiSEE 2026) couple CGR route selection with *pre-provisioned symmetric* key
+    scopes (no KEM, no key carried in bundles, no decryptability metric); BPKD (Würbs et al., SpaceOps 2025)
+    distributes public keys by keystore snapshots and derives long-lived symmetric keys;
+  - post-quantum DTN: dos Santos et al. (ECCWS, survey, no simulation) name "a post-quantum key ... may expire
+    before reaching its destination" as open; Tanchev (STINT 2026) encapsulates each bundle to receiver epoch keys
+    (no reuse across bundles); Kedrowitsch (VT dissertation 2025) runs ML-KEM under intermittent computing and
+    builds a BPv7 ns-3 module (no bundle-level key reuse or routing measurement);
+  - earlier: the IETF drafts, the DTKA draft, Menesidou et al. (2017 survey), Rüsch et al. (CHANTS 2017,
+    per-bundle puncturable encryption), Eichen et al. (arXiv 2607.23007, interactive KDC/PSK handshake) and
+    Dowling et al. (arXiv 2503.06785, survey).
+  Limits: these were read by question-answering passes over the full texts, not line by line; paywalled venues
+  (IEEE Xplore, ACM DL full text) were not searched directly.
 
 ## 2. Setup
 
