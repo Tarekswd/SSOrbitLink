@@ -1,0 +1,15 @@
+date_utc: 2026-11-25T14:19:12Z
+seeds: 10 
+kernel: Linux 6.6.87.2-microsoft-standard-WSL2 x86_64
+cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+crates:
+  name = "aes-gcm"	version = "0.10.3"
+  name = "aes-kw"	version = "0.2.1"
+  name = "bp7"	version = "0.12.2"
+  name = "hmac"	version = "0.12.1"
+  name = "ml-kem"	version = "0.3.4"
+  name = "sha2"	version = "0.10.9"
+network metrics: SIMULATED; protect/accept times: MEASURED; energy: ESTIMATED (1e-7 J/bit assumption)
+note: rows 1-1080 copied from results/20261125T141910Z (deterministic per seed); new variants t300, t600, uplink appended 2026-11-26T19:32:50Z
+note: rows 1-1440 copied from results/20261126T200000Z (deterministic per seed); variant r1a (destination key acks) appended 2026-11-28T10:08:10Z

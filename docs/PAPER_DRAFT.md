@@ -1,8 +1,9 @@
 # Amortising Post-Quantum Key Transport in Delay-Tolerant Satellite Networks
 
 *Working draft. Network metrics are SIMULATED and cryptographic CPU times are MEASURED
-(`results/20261126T200000Z/`: 1,440 runs = 144 configurations x 10 seeds, 12 h simulated each; the first 1,080
-runs are `results/20261125T141910Z/`, which the simulator reproduces exactly per seed). Sections marked
+(`results/20261128T120000Z/`: 1,560 runs = 156 configurations x 10 seeds, 12 h simulated each; its first
+1,440 runs are `results/20261126T200000Z/` and the first 1,080 of those `results/20261125T141910Z/`, which the
+simulator reproduces exactly per seed). Sections marked
 **[TODO]** are not done.*
 
 ## Abstract
@@ -173,9 +174,42 @@ Under CGR every rule in this table except k = 4 at low load (0.670 vs 0.677) is 
 
 So the refresh rule should follow the routing regime: t = 600-900 s for CGR and epidemic routing, and t = 300 s or
 uplink-change refresh for first-contact routing. Not yet tested: refresh on the actual first hop (needs per-bundle
-routing decisions at the source), and destination-generated key acknowledgements.
+routing decisions at the source).
 
-![Decrypted delivery ratio for all twelve security variants, by routing and load, with ISLs off (left) and on (right)](../results/20261126T200000Z/decrypted.png)
+### Destination key acknowledgements
+
+The obvious alternative to blind refresh is feedback: when the destination first learns a session key it returns a
+key-ack bundle (16-byte payload) to the source through the same DTN, and the source carries the ciphertext on every
+bundle of the session until the ack arrives (variant r1a). The ack is routed like data, so its delay and loss are
+simulated, and its bytes are counted (ack bytes per data bundle).
+
+| ISL | load | routing | BcbPq: decrypted / bytes | acks (r1a): decrypted / bytes + ack bytes | best refresh: decrypted / bytes |
+|---|---|---|---|---|---|
+| off | 120 | CGR | 0.678 / 1,184 | 0.678 / 1,158 + 223 | t900: 0.677 / 262 |
+| on | 120 | CGR | 0.780 / 1,184 | 0.780 / 715 + 293 | t900: 0.780 / 262 |
+| off | 20 | CGR | 0.677 / 1,184 | 0.677 / 1,166 + 212 | t900: 0.676 / 668 |
+| off | 120 | Epidemic | 0.285 / 1,184 | 0.287 / 1,177 + 44 | t900: 0.358 / 262 |
+| on | 120 | Epidemic | 0.328 / 1,184 | 0.333 / 1,149 + 55 | t600: 0.373 / 320 |
+| off | 120 | FirstContact | 0.227 / 1,184 | 0.227 / 1,175 + 62 | r1u: 0.221 / 449 |
+| on | 120 | FirstContact | 0.336 / 1,184 | 0.335 / 1,007 + 129 | r1u: 0.326 / 449 |
+| off | 20 | FirstContact | 0.223 / 1,184 | 0.223 / 1,181 + 41 | r1u: 0.223 / 901 |
+
+13. **Key acks restore decryptability but save almost no bytes.** r1a matches per-bundle BcbPq in every cell
+    (within 0.005), but its security bytes per bundle stay at 1,007-1,181 without ISLs (715-1,181 overall) even
+    before counting the acks, and with the acks the total exceeds per-bundle in 8 of the 12 cells (e.g. 1,381 vs
+    1,184 for CGR at high load without ISLs). The ack returns only after a DTN round trip, by which time most of
+    the one-hour session has already been sent with the ciphertext. Savings appear only with ISLs, where round
+    trips are short (totals 1,008-1,180, best for CGR at high load: 1,008 vs 1,184), and stay far above the
+    refresh rules (262-449 bytes at high load).
+14. **Under epidemic routing, acks undo the amortisation gain.** Bundles are as large as per-bundle ones again, so
+    decrypted delivery falls back to the per-bundle level (0.287 vs 0.285), below every refresh rule (0.358 for
+    t = 900 s).
+
+So feedback-based key management does not pay at DTN round-trip times; open-loop refresh dominates it on bytes at
+equal or nearly equal decryptability. Acks could pay with sessions much longer than the round trip (an
+untested regime here, where the session is one hour).
+
+![Decrypted delivery ratio for all thirteen security variants, by routing and load, with ISLs off (left) and on (right)](../results/20261128T120000Z/decrypted.png)
 
 *Figure 1. Bundles delivered and decrypted within their lifetime, over bundles generated (simulated; mean over 10
 seeds). Under CGR every refresh rule reaches the per-bundle BcbPq bar at high load, and t = 300-900 s and r1u also
