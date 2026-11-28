@@ -339,3 +339,20 @@ fn uplink_refresh_recarries_ciphertext_on_new_uplink() {
         .collect();
     assert_eq!(carried, [true, false, true, false, false, true]);
 }
+
+#[test]
+fn until_ack_carries_ciphertext_until_session_is_acked() {
+    let keys = Keys::generate(3);
+    let mut tx = SenderSessions::new(3600.0, 1, 0);
+    tx.until_ack = true;
+    let mut carried = Vec::new();
+    for i in 0..5u64 {
+        if i == 3 {
+            tx.ack(0, 1, 0); // ack for session (src 0, dst 1, epoch 0) arrives before bundle 3
+        }
+        let t = i as f64 * 10.0;
+        let mut b = build_bundle(0, 1, b"x".to_vec(), 600.0, t, i);
+        carried.push(tx.protect(&mut b, &keys, 0, 1, t).unwrap());
+    }
+    assert_eq!(carried, [true, true, true, false, false]);
+}

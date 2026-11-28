@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seeds: u64 = a[1].parse()?;
     let quick = a.iter().any(|x| x == "--quick");
     let horizon = if quick { 2.0 * 3600.0 } else { 12.0 * 3600.0 };
-    const HEADER: &str = "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate,session_redundancy,decrypted_ratio,plaintext_delay_median_s,plaintext_delay_p95_s,kem_carrying,session_refresh_every,session_refresh_s,session_refresh_uplink";
+    const HEADER: &str = "seed,routing,mode,isl,load_per_gs_hour,contacts,generated,delivered,delivery_ratio,delay_median_s,delay_p95_s,expired_copies,refused_buffer_full,source_drops,aborted_transfers,bytes_tx,overhead_tx_per_delivered_payload,mean_bundle_bytes,mean_plain_bundle_bytes,security_overhead_bytes,protect_us_mean,accept_us_mean,crypto_failures,route_computations,sat_buffer_util_mean,sat_buffer_util_max,energy_j_estimate,session_redundancy,decrypted_ratio,plaintext_delay_median_s,plaintext_delay_p95_s,kem_carrying,session_refresh_every,session_refresh_s,session_refresh_uplink,session_ack,acks_sent,acks_delivered,ack_bytes_per_bundle";
     // Resume: keep complete rows of an existing file (a killed run may leave a truncated last line), skip their configs.
     let ncols = HEADER.split(',').count();
     let old = std::fs::read_to_string(&a[2]).unwrap_or_default();
@@ -48,12 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let key = |f: &[&str]| {
         format!(
-            "{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}",
             f[..5].join(","),
             f[27],
             f[32],
             f[33],
-            f[34]
+            f[34],
+            f[35]
         )
     };
     let done: std::collections::HashSet<String> = rows
@@ -70,23 +71,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for isl in [false, true] {
             for load in [20.0, 120.0] {
                 for routing in [Routing::Cgr, Routing::Epidemic, Routing::FirstContact] {
-                    for (mode, redundancy, refresh, refresh_s, uplink) in [
-                        (Mode::None, 0, 0, 0.0, false),
-                        (Mode::BcbPsk, 0, 0, 0.0, false),
-                        (Mode::BcbPq, 0, 0, 0.0, false),
-                        (Mode::BcbPqSession, 1, 0, 0.0, false),
-                        (Mode::BcbPqSession, 3, 0, 0.0, false),
-                        (Mode::BcbPqSession, 1, 4, 0.0, false),
-                        (Mode::BcbPqSession, 1, 8, 0.0, false),
-                        (Mode::BcbPqSession, 1, 0, 300.0, false),
-                        (Mode::BcbPqSession, 1, 0, 600.0, false),
-                        (Mode::BcbPqSession, 1, 0, 900.0, false),
-                        (Mode::BcbPqSession, 1, 0, 1800.0, false),
-                        (Mode::BcbPqSession, 1, 0, 0.0, true),
+                    for (mode, redundancy, refresh, refresh_s, uplink, ack) in [
+                        (Mode::None, 0, 0, 0.0, false, false),
+                        (Mode::BcbPsk, 0, 0, 0.0, false, false),
+                        (Mode::BcbPq, 0, 0, 0.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 0.0, false, false),
+                        (Mode::BcbPqSession, 3, 0, 0.0, false, false),
+                        (Mode::BcbPqSession, 1, 4, 0.0, false, false),
+                        (Mode::BcbPqSession, 1, 8, 0.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 300.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 600.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 900.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 1800.0, false, false),
+                        (Mode::BcbPqSession, 1, 0, 0.0, true, false),
+                        (Mode::BcbPqSession, 1, 0, 0.0, false, true),
                     ] {
                         let k = format!(
-                            "{seed},{routing:?},{mode:?},{isl},{load}|{redundancy}|{refresh}|{refresh_s}|{}",
-                            uplink as u8
+                            "{seed},{routing:?},{mode:?},{isl},{load}|{redundancy}|{refresh}|{refresh_s}|{}|{}",
+                            uplink as u8, ack as u8
                         );
                         if done.contains(&k) {
                             continue;
@@ -116,12 +118,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pq_session_refresh_every: refresh,
                             pq_session_refresh_s: refresh_s,
                             pq_session_refresh_uplink: uplink,
+                            pq_session_ack: ack,
                         };
                         let m = run(&cfg)?;
                         let delivered_payload = (m.delivered * cfg.payload_bytes).max(1) as f64;
                         writeln!(
                             out,
-                            "{seed},{routing:?},{mode:?},{isl},{load},{},{},{},{:.4},{:.1},{:.1},{},{},{},{},{},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{:.4},{:.4},{:.3},{redundancy},{:.4},{:.1},{:.1},{},{refresh},{refresh_s},{}",
+                            "{seed},{routing:?},{mode:?},{isl},{load},{},{},{},{:.4},{:.1},{:.1},{},{},{},{},{},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{:.4},{:.4},{:.3},{redundancy},{:.4},{:.1},{:.1},{},{refresh},{refresh_s},{},{},{},{},{:.1}",
                             m.contacts,
                             m.generated,
                             m.delivered,
@@ -148,10 +151,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pct(&m.plaintext_delays_s, 0.5),
                             pct(&m.plaintext_delays_s, 0.95),
                             m.kem_carrying,
-                            uplink as u8
+                            uplink as u8,
+                            ack as u8,
+                            m.acks_sent,
+                            m.acks_delivered,
+                            m.ack_bytes as f64 / m.generated.max(1) as f64
                         )?;
                         eprintln!(
-                            "seed={seed} isl={isl} load={load} {routing:?} {mode:?} r={redundancy} k={refresh} t={refresh_s} u={uplink}: delivered {}/{} decrypted {}",
+                            "seed={seed} isl={isl} load={load} {routing:?} {mode:?} r={redundancy} k={refresh} t={refresh_s} u={uplink} a={ack}: delivered {}/{} decrypted {}",
                             m.delivered, m.generated, m.decrypted
                         );
                     }

@@ -33,6 +33,7 @@ fn sim_cfg(routing: Routing, mode: Mode, hours: f64) -> SimConfig {
         pq_session_refresh_every: 0,
         pq_session_refresh_s: 0.0,
         pq_session_refresh_uplink: false,
+        pq_session_ack: false,
     }
 }
 
@@ -266,4 +267,19 @@ fn session_mode_simulation_decrypts_and_saves_kem_bytes() {
     );
     assert!(b.mean_bundle_bytes < a.mean_bundle_bytes - 500.0);
     assert!(b.decrypted <= b.delivered && b.decrypted > 0);
+}
+
+#[test]
+fn key_acks_are_routed_back_and_stop_ciphertext_carrying() {
+    let mut ses = sim_cfg(Routing::Cgr, Mode::BcbPqSession, 3.0);
+    ses.bundles_per_gs_hour = 120.0;
+    let mut acked = ses.clone();
+    acked.pq_session_ack = true;
+    let (plain, a) = (run(&ses).unwrap(), run(&acked).unwrap());
+    assert_eq!(a.crypto_failures, 0);
+    assert!(a.acks_sent > 0 && a.acks_delivered > 0 && a.acks_delivered <= a.acks_sent);
+    assert!(a.ack_bytes > 0);
+    // until acked, every bundle carries the ciphertext, so more carry it than with r = 1, but not all of them
+    assert!(a.kem_carrying > plain.kem_carrying && a.kem_carrying < a.generated);
+    assert_eq!(plain.acks_sent, 0);
 }

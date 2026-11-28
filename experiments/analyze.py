@@ -16,6 +16,7 @@ COLS = [
     ("delivery_ratio", 3), ("decrypted_ratio", 3), ("plaintext_delay_median_s", 0), ("security_overhead_bytes", 0),
     ("kem_carrying", 0), ("refused_buffer_full", 0), ("sat_buffer_util_mean", 3),
     ("overhead_tx_per_delivered_payload", 1), ("protect_us_mean", 0), ("accept_us_mean", 0),
+    ("ack_bytes_per_bundle", 1), ("acks_delivered", 0),
 ]
 
 
@@ -26,7 +27,8 @@ def variant(r):
     ts = r.get("session_refresh_s", "0")
     return (f"BcbPqSession/r{r['session_redundancy']}" + (f"k{k}" if k not in ("", "0") else "")
             + (f"t{float(ts):.0f}" if ts not in ("", "0", "0.0", "0.000") and float(ts) > 0 else "")
-            + ("u" if r.get("session_refresh_uplink", "0") == "1" else ""))
+            + ("u" if r.get("session_refresh_uplink", "0") == "1" else "")
+            + ("a" if r.get("session_ack", "0") == "1" else ""))
 
 
 def ci(xs):
@@ -53,7 +55,7 @@ def main(raw, out):
     for k in sorted(groups):
         cells = []
         for c, d in COLS:
-            m, h = ci([float(r[c]) for r in groups[k]])
+            m, h = ci([float(r.get(c, "nan")) for r in groups[k]])  # older runs lack newer columns
             summary.setdefault(k, {})[c] = m
             cells.append(f"{m:.{d}f}" + (f" +/- {h:.{d}f}" if h is not None else ""))
         lines.append(f"| {' | '.join(k)} | {len(groups[k])} | " + " | ".join(cells) + " |")
@@ -70,7 +72,7 @@ def main(raw, out):
         return
     variants = ["None", "BcbPsk", "BcbPq", "BcbPqSession/r1", "BcbPqSession/r3", "BcbPqSession/r1k4", "BcbPqSession/r1k8",
                 "BcbPqSession/r1t300", "BcbPqSession/r1t600", "BcbPqSession/r1t900", "BcbPqSession/r1t1800",
-                "BcbPqSession/r1u"]
+                "BcbPqSession/r1u", "BcbPqSession/r1a"]
     variants = [v for v in variants if any(k[3] == v for k in summary)]  # older runs lack some variants
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
     for ax, isl in zip(axes, ("false", "true")):

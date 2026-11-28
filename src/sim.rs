@@ -53,6 +53,9 @@ pub struct SimConfig {
     pub pq_session_refresh_s: f64,
     /// BcbPqSession: also carry the ciphertext when the source's uplink satellite changes.
     pub pq_session_refresh_uplink: bool,
+    /// BcbPqSession: the destination returns a small key-ack bundle when it learns a session key; the
+    /// source carries the ciphertext on every bundle of that session until the ack arrives.
+    pub pq_session_ack: bool,
 }
 
 impl SimConfig {
@@ -97,10 +100,17 @@ pub struct Metrics {
     pub sat_buffer_util_mean: f64,
     pub sat_buffer_util_max: f64,
     pub energy_j_estimate: f64,
+    /// Key-ack bundles created at destinations, delivered to sources, and their total bytes.
+    pub acks_sent: usize,
+    pub acks_delivered: usize,
+    pub ack_bytes: u64,
 }
 
 struct Msg {
+    src: usize,
     dst: usize,
+    /// Some((src, dst, epoch)) for a key-ack bundle (control traffic, not counted as data).
+    ack_for: Option<(usize, usize, u64)>,
     created: f64,
     expires: f64,
     size: usize,
@@ -223,6 +233,7 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
     );
     tx_sessions.refresh_s = cfg.pq_session_refresh_s;
     tx_sessions.refresh_uplink = cfg.pq_session_refresh_uplink;
+    tx_sessions.until_ack = cfg.pq_session_ack;
     let mut rx_sessions = ReceiverSessions::default();
     // delivered-but-undecryptable bundles waiting for their session key: (dst, kid) -> [(id, expires)]
     let mut pending: Pending = Default::default();
@@ -302,7 +313,9 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
             m.mean_bundle_bytes += cbor.len() as f64;
             let id = msgs.len();
             msgs.push(Msg {
+                src,
                 dst,
+                ack_for: None,
                 created: t,
                 expires: t + cfg.lifetime_s,
                 size: cbor.len(),
@@ -348,6 +361,7 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
         });
 
         // 4. transmissions
+        let mut new_acks: Vec<(usize, usize, u64)> = Vec::new(); // (src, dst, epoch) keys learned this step
         for &ci in &active {
             let c = plan.contacts[ci];
             let mut budget = c.rate_bps / 8.0 * cfg.dt_s;
@@ -392,7 +406,12 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
                 let msg = &msgs[id];
                 let moves = cfg.routing != Routing::Epidemic;
                 if c.to == msg.dst {
-                    if delivered.insert(id) {
+                    if let Some((s, d, e)) = msg.ack_for {
+                        if delivered.insert(id) {
+                            tx_sessions.ack(s, d, e);
+                            m.acks_delivered += 1;
+                        }
+                    } else if delivered.insert(id) {
                         let mut b =
                             Bundle::try_from(msg.cbor.as_slice()).map_err(|e| format!("{e:?}"))?;
                         let t0 = Instant::now();
@@ -403,6 +422,10 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
                                     m.accept_us.push(t0.elapsed().as_secs_f64() * 1e6);
                                     m.decrypted += 1;
                                     m.plaintext_delays_s.push(now - msg.created);
+                                    if learned.is_some() && cfg.pq_session_ack {
+                                        let epoch = (msg.created / tx_sessions.epoch_s) as u64;
+                                        new_acks.push((msg.src, msg.dst, epoch));
+                                    }
                                     // a newly learned key unlocks bundles waiting for it (if not yet expired)
                                     if let Some(kid) = learned {
                                         for (pid, exp) in
@@ -464,6 +487,33 @@ pub fn run(cfg: &SimConfig) -> Result<Metrics, String> {
                     let cp = buf[c.from].remove(pos);
                     used[c.from] -= msgs[cp.id].size;
                 }
+            }
+        }
+
+        // 4b. key acks: a 16-byte payload (the key id) from the destination back to the source
+        for (s, d, e) in new_acks {
+            let cbor =
+                build_bundle(d, s, vec![0u8; 16], cfg.lifetime_s, t, msgs.len() as u64).to_cbor();
+            let id = msgs.len();
+            msgs.push(Msg {
+                src: d,
+                dst: s,
+                ack_for: Some((s, d, e)),
+                created: t,
+                expires: t + cfg.lifetime_s,
+                size: cbor.len(),
+                cbor,
+            });
+            m.acks_sent += 1;
+            m.ack_bytes += msgs[id].size as u64;
+            if used[d] + msgs[id].size <= cap(d) {
+                used[d] += msgs[id].size;
+                seen[d].insert(id);
+                buf[d].push(Copy {
+                    id,
+                    prev: None,
+                    next_contact: None,
+                });
             }
         }
 

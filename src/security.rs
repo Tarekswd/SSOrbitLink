@@ -230,6 +230,8 @@ pub struct SenderSessions {
     pub refresh_s: f64,
     /// Also carry the ciphertext when the source's uplink satellite differs from the one that took the last ciphertext.
     pub refresh_uplink: bool,
+    /// Carry the ciphertext on every bundle of a session until the destination's key ack arrives (`ack`).
+    pub until_ack: bool,
     sessions: HashMap<(usize, usize, u64), Session>,
 }
 
@@ -241,6 +243,7 @@ struct Session {
     sent: u32,
     last_ct_t: f64,
     last_uplink: Option<usize>,
+    acked: bool,
 }
 
 impl SenderSessions {
@@ -255,7 +258,15 @@ impl SenderSessions {
             refresh_every,
             refresh_s: 0.0,
             refresh_uplink: false,
+            until_ack: false,
             sessions: HashMap::new(),
+        }
+    }
+
+    /// The destination acknowledged the session key of (src, dst, epoch): stop re-carrying the ciphertext.
+    pub fn ack(&mut self, src: usize, dst: usize, epoch: u64) {
+        if let Some(s) = self.sessions.get_mut(&(src, dst, epoch)) {
+            s.acked = true;
         }
     }
 
@@ -302,13 +313,15 @@ impl SenderSessions {
                     sent: 0,
                     last_ct_t: t,
                     last_uplink: None,
+                    acked: false,
                 })
             }
         };
         let with_ct = s.carried < self.redundancy
             || (self.refresh_every > 0 && s.sent % self.refresh_every == 0)
             || (self.refresh_s > 0.0 && t - s.last_ct_t >= self.refresh_s)
-            || (self.refresh_uplink && uplink.is_some() && uplink != s.last_uplink);
+            || (self.refresh_uplink && uplink.is_some() && uplink != s.last_uplink)
+            || (self.until_ack && !s.acked);
         s.sent += 1;
         let r = if with_ct {
             s.carried += 1;
